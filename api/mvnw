@@ -1,0 +1,85 @@
+#!/bin/sh
+# ----------------------------------------------------------------------------
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+# ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# Apache Maven Wrapper startup batch script, version 3.3.2
+# ----------------------------------------------------------------------------
+
+set -e
+
+# OS specific support.
+cygwin=false
+darwin=false
+mingw=false
+msys=false
+case "$(uname)" in
+  CYGWIN*) cygwin=true ;;
+  Darwin*) darwin=true ;;
+  MINGW*) mingw=true ;;
+  MSYS*) msys=true ;;
+esac
+
+# For Cygwin, ensure paths are in UNIX format before anything is touched.
+if $cygwin; then
+  [ -n "$JAVA_HOME" ] && JAVA_HOME="$(cygpath --unix "$JAVA_HOME")"
+  [ -n "$CLASSPATH" ] && CLASSPATH="$(cygpath --path --unix "$CLASSPATH")"
+fi
+
+# Set MAVEN_HOME if not already set
+if [ -n "$MAVEN_HOME" ]; then
+  MVNW_REPOURL="${MVNW_REPOURL:-https://repo.maven.apache.org/maven2}"
+fi
+
+# Find mvn wrapper properties
+MVNW_DIR="$(CDPATH="" cd -- "$(dirname "$0")" && pwd)"
+PROPERTIES_FILE="$MVNW_DIR/.mvn/wrapper/maven-wrapper.properties"
+
+# Read distribution URL from properties
+if [ -f "$PROPERTIES_FILE" ]; then
+  DISTRIBUTION_URL=$(sed -n 's/^distributionUrl=//p' "$PROPERTIES_FILE")
+fi
+
+# Download Maven if needed
+MAVEN_DIST_NAME="${DISTRIBUTION_URL##*/}"
+MAVEN_HOME_CANDIDATE="${HOME}/.m2/wrapper/dists/${MAVEN_DIST_NAME%.zip}"
+
+if [ ! -d "$MAVEN_HOME_CANDIDATE" ]; then
+  echo "Downloading Maven: $DISTRIBUTION_URL"
+  mkdir -p "$MAVEN_HOME_CANDIDATE"
+  TMP_DOWNLOAD="$MAVEN_HOME_CANDIDATE/${MAVEN_DIST_NAME}"
+  if command -v curl > /dev/null 2>&1; then
+    curl -s -o "$TMP_DOWNLOAD" "$DISTRIBUTION_URL"
+  elif command -v wget > /dev/null 2>&1; then
+    wget -q -O "$TMP_DOWNLOAD" "$DISTRIBUTION_URL"
+  else
+    echo "Error: Cannot download Maven wrapper — neither curl nor wget is available." >&2
+    exit 1
+  fi
+  unzip -qq "$TMP_DOWNLOAD" -d "$MAVEN_HOME_CANDIDATE"
+  rm -f "$TMP_DOWNLOAD"
+fi
+
+MAVEN_BIN=$(find "$MAVEN_HOME_CANDIDATE" -type f -name "mvn" | head -1)
+if [ -z "$MAVEN_BIN" ]; then
+  echo "Error: Could not find mvn binary in $MAVEN_HOME_CANDIDATE" >&2
+  exit 1
+fi
+
+exec "$MAVEN_BIN" "$@"

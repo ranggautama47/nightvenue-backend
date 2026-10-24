@@ -1,0 +1,57 @@
+name: CI — Spring Boot API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - ".github/workflows/ci-api.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "api/**"
+      - ".github/workflows/ci-api.yml"
+
+# Path filters note: These filters are intentional. A PR that touches only
+# ml-service/ will not trigger this workflow, and this check will be marked
+# "skipped" (not "pending"), which GitHub treats as passing for branch
+# protection rules. Configure branch protection to use "ci-api / build-test"
+# as a REQUIRED check only if changes to api/ are present, or use a
+# required-status-checks workaround (e.g. "all-checks" composite job).
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4.7.0
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: "maven"
+
+      - name: Compile
+        working-directory: api
+        run: ./mvnw compile -B --no-transfer-progress
+
+      - name: Run tests (including Testcontainers integration tests)
+        working-directory: api
+        run: ./mvnw test -B --no-transfer-progress
+
+      - name: Package (skip tests — already ran)
+        working-directory: api
+        run: ./mvnw package -DskipTests -B --no-transfer-progress
+
+      - name: Docker build verification
+        uses: docker/build-push-action@v6.15.0
+        with:
+          context: ./api
+          push: false
+          tags: nightvenue-api:ci-check

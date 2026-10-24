@@ -1,0 +1,7 @@
+target/
+*.jar
+!app.jar
+.env
+.venv/
+__pycache__/
+*.pyc

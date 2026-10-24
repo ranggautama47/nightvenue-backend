@@ -1,0 +1,59 @@
+name: Docker Build & Push (GHCR)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least-privilege: only packages:write needed, contents:read for checkout
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_API: ghcr.io/${{ github.repository_owner }}/nightvenue-api
+  IMAGE_ML: ghcr.io/${{ github.repository_owner }}/nightvenue-ml
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.9.0
+
+      - name: Login to GHCR (push to main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3.3.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build API image
+        uses: docker/build-push-action@v6.15.0
+        with:
+          context: ./api
+          # Push ONLY on push to main, never on pull_request
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.IMAGE_API }}:${{ github.sha }}
+            ${{ env.IMAGE_API }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build ML image
+        uses: docker/build-push-action@v6.15.0
+        with:
+          context: ./ml-service
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.IMAGE_ML }}:${{ github.sha }}
+            ${{ env.IMAGE_ML }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

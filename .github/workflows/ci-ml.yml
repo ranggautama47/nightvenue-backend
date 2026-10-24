@@ -1,0 +1,54 @@
+name: CI — ML Service
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ml-service/**"
+      - ".github/workflows/ci-ml.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "ml-service/**"
+      - ".github/workflows/ci-ml.yml"
+
+# Path filters note: A PR touching only api/ will not trigger this workflow;
+# GitHub marks it "skipped" (passes) for branch protection. Align required
+# check names in branch protection settings accordingly.
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5.4.0
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime + dev dependencies
+        working-directory: ml-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Ruff lint check
+        working-directory: ml-service
+        run: ruff check .
+
+      - name: Run pytest
+        working-directory: ml-service
+        run: pytest tests/ -v
+
+      - name: Docker build verification
+        uses: docker/build-push-action@v6.15.0
+        with:
+          context: ./ml-service
+          push: false
+          tags: nightvenue-ml:ci-check
