@@ -185,8 +185,8 @@ classDiagram
 ```mermaid
 classDiagram
     class BusinessDateService {
-        +businessDateOf(Instant, Venue) LocalDate
-        +currentBusinessDate(Venue) LocalDate
+        +businessDate(Instant, ZoneId, int cutoffHour) LocalDate
+        +currentBusinessDate(ZoneId, int cutoffHour) LocalDate
     }
     class OrderService {
         +open(cmd) Order
@@ -270,7 +270,7 @@ sequenceDiagram
     participant D as PostgreSQL
 
     K->>A: POST /api/v1/orders (meja)
-    A->>B: currentBusinessDate(venue)
+    A->>B: currentBusinessDate(venue.timezone, venue.businessDayCutoffHour)
     B-->>A: business_date
     A->>D: INSERT order OPEN (unik per meja aktif)
     A-->>K: order

@@ -94,16 +94,16 @@ Legenda: **PK**, **FK**, **UQ**, **NN** (not null), **CK** (check).
 
 **user_venues**: `user_id` FK→users PK(1); `venue_id` FK→venues PK(2).
 
-**customers**: `id` PK; `user_id` FK→users UQ **nullable**; `full_name` NN; `phone` VARCHAR(30) UQ nullable; `email`; `age_verified` BOOLEAN NN default false; `age_verified_at`; `age_verified_by` FK→users; `created_at`, `updated_at`.
+**customers**: `id` PK; `user_id` FK→users UQ **nullable**; `full_name` NN; `phone` VARCHAR(30) UQ nullable; `email` VARCHAR(255); `age_verified` BOOLEAN NN default false; `age_verified_at`; `age_verified_by` FK→users; `created_at`, `updated_at`.
 CK: `age_verified = false OR (age_verified_at IS NOT NULL AND age_verified_by IS NOT NULL)`. Tidak ada kolom tanggal lahir atau nomor identitas.
 
 ### 4.2 Katalog
 
-**product_categories**: `id` PK, `name` UQ NN, `sort_order` INT NN default 0.
+**product_categories**: `id` PK, `name` VARCHAR(100) UQ NN, `sort_order` INT NN default 0.
 
 **products**: `id` PK; `venue_id` FK NN; `category_id` FK; `sku` VARCHAR(40) NN, UQ `(venue_id, sku)`; `name` VARCHAR(150) NN; `price` BIGINT NN CK ≥ 0; `is_bottle_keepable` BOOLEAN NN default false; `bottle_volume_ml` INT CK > 0 (wajib bila `is_bottle_keepable`); `is_active` BOOLEAN NN; `version` BIGINT NN; `created_at`, `updated_at`.
 
-**ingredients**: `id` PK; `sku` UQ NN; `name` NN; `unit` VARCHAR(10) NN CK `ML, GRAM, PIECE`; `is_active` NN.
+**ingredients**: `id` PK; `sku` VARCHAR(40) UQ NN; `name` VARCHAR(120) NN; `unit` VARCHAR(10) NN CK `ML, GRAM, PIECE`; `is_active` NN.
 
 **recipes**: `id` PK; `product_id` FK→products UQ NN; `version` BIGINT; `updated_at`. Produk kemasan utuh memakai recipe satu item `PIECE`.
 
@@ -113,7 +113,7 @@ CK: `age_verified = false OR (age_verified_at IS NOT NULL AND age_verified_by IS
 
 ### 4.3 Inventory
 
-**stock_locations**: `id` PK; `venue_id` FK NN; `name` NN; `type` NN CK `WAREHOUSE, BAR`; UQ `(venue_id, name)`. Penjualan memotong tepat satu `BAR` per venue (BR-26); partial UQ `(venue_id) WHERE type = 'BAR'`.
+**stock_locations**: `id` PK; `venue_id` FK NN; `name` VARCHAR(100) NN; `type` NN CK `WAREHOUSE, BAR`; UQ `(venue_id, name)`. Penjualan memotong tepat satu `BAR` per venue (BR-26); partial UQ `(venue_id) WHERE type = 'BAR'`.
 
 **inventory_items**: `id` PK; `location_id` FK NN; `ingredient_id` FK NN; `quantity` NUMERIC(14,3) NN **CK ≥ 0**; `reorder_level` NUMERIC(14,3) NN default 0; `version` BIGINT NN (jalur admin; jalur POS memakai conditional UPDATE); `updated_at`. UQ `(location_id, ingredient_id)`.
 
@@ -128,7 +128,7 @@ CK: `age_verified = false OR (age_verified_at IS NOT NULL AND age_verified_by IS
 | business_date | DATE | NN (ADR-001) |
 | reference_type | VARCHAR(20) | CK `ORDER_ITEM, VOID_LOG, MANUAL, SEED` |
 | reference_id | BIGINT | |
-| reason | VARCHAR(255) | wajib untuk `WASTE`, `ADJUSTMENT` |
+| reason | VARCHAR(255) | wajib untuk `WASTE`, `ADJUSTMENT` (`ck_inventory_transaction_reason`) |
 | created_by | BIGINT | FK→users nullable (null untuk `SEED`) |
 | created_at | TIMESTAMPTZ | NN |
 
@@ -321,9 +321,9 @@ Partial UQ: `UNIQUE (cashier_id) WHERE status = 'OPEN'`.
 
 ### 4.10 Sistem
 
-**audit_logs** (append-only): `id` PK; `venue_id` FK nullable; `actor_user_id` FK nullable; `action` VARCHAR(50) NN (mis. `ORDER_VOID`, `STOCK_ADJUST`, `SHIFT_FORCED_REVIEW`, `PAYMENT_ON_CLOSED_ORDER`, `WEBHOOK_REJECTED`); `entity_type` NN; `entity_id` BIGINT; `details` JSONB; `ip_address` VARCHAR(45); `created_at` NN.
+**audit_logs** (append-only): `id` PK; `venue_id` FK nullable; `actor_user_id` FK nullable; `action` VARCHAR(50) NN (mis. `ORDER_VOID`, `STOCK_ADJUST`, `SHIFT_FORCED_REVIEW`, `PAYMENT_ON_CLOSED_ORDER`, `WEBHOOK_REJECTED`); `entity_type` VARCHAR(50) NN; `entity_id` BIGINT; `details` JSONB; `ip_address` VARCHAR(45); `created_at` NN.
 
-**idempotency_keys**: `id` PK; `key` UUID NN; `scope` VARCHAR(40) NN (`ORDER_ADD_ITEMS`, `PAYMENT_CREATE`, `ORDER_VOID`, `BOTTLE_DEPOSIT`, `BOTTLE_REDEEM`); `user_id` FK NN; `request_hash` CHAR(64) NN; `response_status` INT; `response_body` JSONB; `created_at` NN. UQ `(scope, user_id, key)`. Dibersihkan berkala (> 24 jam).
+**idempotency_keys**: `id` PK; `key` UUID NN; `scope` VARCHAR(40) NN CK `ORDER_ADD_ITEMS, PAYMENT_CREATE, ORDER_VOID, BOTTLE_DEPOSIT, BOTTLE_REDEEM`; `user_id` FK NN; `request_hash` CHAR(64) NN; `response_status` INT; `response_body` JSONB; `created_at` NN. UQ `(scope, user_id, key)`. Dibersihkan berkala (> 24 jam). Scope baru butuh migrasi.
 
 ---
 

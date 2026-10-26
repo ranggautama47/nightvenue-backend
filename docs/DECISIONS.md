@@ -44,8 +44,10 @@ A canonical `BusinessDateService` calculates the operational date:
 
 ```text
 local         = instant.atZone(venue.timezone)
-business_date = local.minusHours(cutoffHour).toLocalDate()
+business_date = local.toLocalDateTime().minusHours(cutoffHour).toLocalDate()
 ```
+
+`LocalDateTime` subtracts wall-clock hours across DST transitions; `ZonedDateTime.minusHours` subtracts elapsed hours and can assign the wrong business date.
 
 | Waktu lokal (Asia/Jakarta), cutoff = 6 | business_date |
 |---|---|
@@ -53,6 +55,14 @@ business_date = local.minusHours(cutoffHour).toLocalDate()
 | 2026-10-24 05:59:59 | 2026-10-23 |
 | 2026-10-24 06:00:00 | 2026-10-24 |
 | 2026-10-23 20:00 | 2026-10-23 |
+
+Kasus DST (pembuktian mengapa `LocalDateTime` wajib):
+
+| Instant (UTC) | Zona venue | cutoff | Waktu lokal | business_date |
+|---|---|:-:|---|---|
+| 2026-03-08T10:00:00Z | America/New_York | 6 | 2026-03-08 06:00 EDT (DST mulai 07:00Z) | 2026-03-08 |
+
+`ZonedDateTime.minusHours(6)` pada kasus ini menghasilkan 2026-03-07 (salah).
 
 Cutoff `0` berarti sama dengan tanggal kalender. Tidak ada modul lain yang boleh menghitung business date sendiri; waktu "sekarang" selalu dari `Clock` yang diinjeksi (agar boundary dapat diuji).
 
