@@ -6,7 +6,8 @@ Backend for **NightVenue**, a fictional nightlife venue operations platform (POS
 
 | Area | State |
 |---|---|
-| Phase 1 foundation (skeleton, Docker Compose, CI) | In progress |
+| Phase 1 foundation (skeleton, Docker Compose, CI) | Complete |
+| Phase 2 database, business date, demo seed | Implemented |
 | Business features (orders, payments, inventory, ...) | Not implemented yet |
 | Performance and ML metrics | None published. Numbers will appear only after they are measured |
 | Hosting | Not decided (ADR-019 is *Proposed*) |
@@ -44,6 +45,8 @@ Requires Docker Desktop (engine running).
    docker compose up -d --build
    docker compose ps
    ```
+
+   The local Compose stack enables a synthetic Phase 2 seed by default. Set `NIGHTVENUE_SEED_ENABLED=false` to start with an empty database.
 
 3. Verify:
 
@@ -101,9 +104,19 @@ Design documents live in [`docs/`](docs/README.md) and are the single source of 
 
 ## Known limitations
 
-- Only the foundation exists; no business endpoints yet.
+- The 90-day inventory consumption history is synthetic data generated for portfolio demonstration purposes. It is not real production data.
+- Demo venues, menus, and customers are synthetic and are not real operational data.
+- No business endpoints yet.
 - Live deployment is unverified.
-- Demo data will be synthetic and labeled as such.
+
+### Demo accounts
+
+All four demo accounts use password `password` (demo only); roles are `ADMIN`, `MANAGER`, `CASHIER`, and `CUSTOMER` respectively.
+
+- `admin@nightvenue.demo`
+- `manager@nightvenue.demo`
+- `cashier@nightvenue.demo`
+- `customer@nightvenue.demo`
 
 ## License
 

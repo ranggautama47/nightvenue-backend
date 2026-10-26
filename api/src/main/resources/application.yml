@@ -10,9 +10,16 @@ spring:
       connection-timeout: 10000
       maximum-pool-size: 10
 
+  flyway:
+    enabled: true
+
   data:
     redis:
       url: ${REDIS_URL}
+
+nightvenue:
+  seed:
+    enabled: false
 
 management:
   endpoints:

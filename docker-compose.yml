@@ -46,6 +46,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-}
       MIDTRANS_CLIENT_KEY: ${MIDTRANS_CLIENT_KEY:-}
+      NIGHTVENUE_SEED_ENABLED: ${NIGHTVENUE_SEED_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy

@@ -12,7 +12,7 @@ import org.testcontainers.utility.DockerImageName;
  * ServiceConnection auto-wires datasource and Redis URL into Spring properties.
  */
 @TestConfiguration(proxyBeanMethods = false)
-class TestcontainersConfig {
+public class TestcontainersConfig {
 
     @Bean
     @ServiceConnection
