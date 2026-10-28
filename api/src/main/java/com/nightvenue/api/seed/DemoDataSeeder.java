@@ -4,6 +4,7 @@ import com.nightvenue.api.businessday.BusinessDateService;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +29,7 @@ import java.util.Random;
  * The 90-day inventory consumption history is synthetic data generated for portfolio demonstration purposes. It is not real production data.
  */
 @Component
+@Profile({"dev", "test"})
 @ConditionalOnProperty(prefix = "nightvenue.seed", name = "enabled", havingValue = "true")
 public class DemoDataSeeder implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(DemoDataSeeder.class);

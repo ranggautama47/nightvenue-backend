@@ -1,0 +1,3 @@
+nightvenue:
+  auth:
+    cookie-secure: false
