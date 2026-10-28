@@ -1,5 +1,8 @@
-# Set default behaviour to automatically normalize line endings
-* text=auto
+# Normalize text files to LF; keep Windows command scripts CRLF.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
 
 # Force LF on shell scripts, maven wrapper, dockerfiles and workflow YAMLs (prevent Windows CRLF container breakage)
 mvnw text eol=lf
