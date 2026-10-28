@@ -252,7 +252,7 @@ Browser hanya memanggil origin frontend; Next.js `rewrites` meneruskan `/api/*` 
 ### Consequences
 Menghindari cookie lintas-situs. Seluruh panggilan API frontend harus lewat proxy.
 
-### Addendum v2.1 (ADR-009): Refresh token rotation dan reuse policy
+### Addendum Phase 3 — Refresh Token Rotation and Reuse Policy
 
 **Kebijakan reuse: STRICT.** Reuse refresh token (token yang sudah dipakai dan dirotasi dipakai lagi) mencabut **seluruh** sesi user (semua family), bukan hanya family tempat reuse terjadi. Alasan: token baru tidak dapat dikembalikan ke client karena hanya hash yang disimpan server.
 
