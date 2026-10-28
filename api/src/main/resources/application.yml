@@ -17,9 +17,34 @@ spring:
     redis:
       url: ${REDIS_URL}
 
+  mvc:
+    log-request-details: false
+    problemdetails:
+      enabled: true
+
 nightvenue:
   seed:
     enabled: false
+  auth:
+    jwt-secret: ${JWT_SECRET:}
+    access-ttl: ${JWT_ACCESS_TTL:PT15M}
+    refresh-ttl: ${JWT_REFRESH_TTL:P7D}
+    cookie-secure: ${AUTH_COOKIE_SECURE:true}
+  openapi:
+    public: ${NIGHTVENUE_OPENAPI_PUBLIC:false}
+  ratelimit:
+    login:
+      capacity: ${AUTH_RATE_LIMIT_LOGIN:5}
+      period: ${AUTH_RATE_LIMIT_LOGIN_PERIOD:PT1M}
+    refresh:
+      capacity: ${AUTH_RATE_LIMIT_REFRESH:10}
+      period: ${AUTH_RATE_LIMIT_REFRESH_PERIOD:PT1M}
+    logout:
+      capacity: ${AUTH_RATE_LIMIT_LOGOUT:20}
+      period: ${AUTH_RATE_LIMIT_LOGOUT_PERIOD:PT1M}
+    me:
+      capacity: ${AUTH_RATE_LIMIT_ME:30}
+      period: ${AUTH_RATE_LIMIT_ME_PERIOD:PT1M}
 
 management:
   endpoints:
@@ -30,7 +55,7 @@ management:
     health:
       probes:
         enabled: true
-      show-details: always
+      show-details: never
       group:
         liveness:
           include: livenessState
@@ -40,3 +65,7 @@ management:
 server:
   port: 8080
   shutdown: graceful
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      internal-proxies: ${APP_TRUSTED_PROXIES:127[.][0-9]+[.][0-9]+[.][0-9]+|::1|0:0:0:0:0:0:0:1}

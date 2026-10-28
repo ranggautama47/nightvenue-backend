@@ -252,6 +252,18 @@ Browser hanya memanggil origin frontend; Next.js `rewrites` meneruskan `/api/*` 
 ### Consequences
 Menghindari cookie lintas-situs. Seluruh panggilan API frontend harus lewat proxy.
 
+### Addendum Phase 3 — Refresh Token Rotation and Reuse Policy
+
+**Kebijakan reuse: STRICT.** Reuse refresh token (token yang sudah dipakai dan dirotasi dipakai lagi) mencabut **seluruh** sesi user (semua family), bukan hanya family tempat reuse terjadi. Alasan: token baru tidak dapat dikembalikan ke client karena hanya hash yang disimpan server.
+
+**Penyimpanan tombstone:** Token lama yang sudah dirotasi **tidak langsung dihapus**. Statusnya diubah menjadi `USED` dengan TTL sisa dari token asli. Ini memungkinkan deteksi reuse sampai TTL habis. Tanpa tombstone, reuse tidak dapat dibedakan dari token random yang tidak dikenal.
+
+**Atomicity rotasi:** Operasi rotasi (validasi token lama → tandai USED → buat token baru → perpanjang family TTL) **WAJIB atomik** menggunakan Redis Lua script. Pola GET→DEL→SET biasa rentan race condition pada concurrent refresh (dua tab, retry otomatis). `MULTI/EXEC` tidak cukup karena tidak mendukung conditional write berdasarkan hasil read.
+
+**Resolusi IP untuk rate limiting:** Karena arsitektur Next.js rewrite, Spring melihat IP proxy. Gunakan `server.forward-headers-strategy=native` dengan `server.tomcat.remoteip.internal-proxies` dari env `APP_TRUSTED_PROXIES`. Dilarang membaca `X-Forwarded-For` secara manual atau menggunakan `ForwardedHeaderFilter` (tidak punya daftar proxy tepercaya, bisa di-spoof client).
+
+**Konsekuensi operasional:** Dua request refresh paralel dengan token sama (dua tab, retry otomatis) menyebabkan yang kalah memicu reuse → seluruh sesi user dicabut. Frontend **WAJIB** single-flight refresh (queue request, jangan paralel). Keterbatasan ini didokumentasikan di `APPLICATION_ARCHITECTURE.md`.
+
 ---
 
 ## ADR-010 — Customer terpisah dari user

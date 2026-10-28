@@ -39,14 +39,14 @@ Requires Docker Desktop (engine running).
    New-Secret
    ```
 
-2. Start the stack and check that all four services are `healthy`:
+2. Seed is disabled by default. To load synthetic demo data in a local development environment, set `NIGHTVENUE_SEED_ENABLED=true` in `.env`. Keep it `false` on public deployments. Start the stack and check that all four services are `healthy`:
 
    ```powershell
    docker compose up -d --build
    docker compose ps
    ```
 
-   The local Compose stack enables a synthetic Phase 2 seed by default. Set `NIGHTVENUE_SEED_ENABLED=false` to start with an empty database.
+   If a local database already contains users, the seeder does not overwrite them. Reset local database volumes with `docker compose down -v` before reseeding demo credentials.
 
 3. Verify:
 
@@ -111,12 +111,24 @@ Design documents live in [`docs/`](docs/README.md) and are the single source of 
 
 ### Demo accounts
 
-All four demo accounts use password `password` (demo only); roles are `ADMIN`, `MANAGER`, `CASHIER`, and `CUSTOMER` respectively.
+All four demo accounts use password `password` (demo only; never use this password outside a local demo); roles are `ADMIN`, `MANAGER`, `CASHIER`, and `CUSTOMER` respectively. Demo seed must remain disabled on any public deployment.
 
 - `admin@nightvenue.demo`
 - `manager@nightvenue.demo`
 - `cashier@nightvenue.demo`
 - `customer@nightvenue.demo`
+
+The Phase 3 API returns access tokens in the login/refresh response body; frontend memory-only storage is a frontend responsibility and is not verified here. Refresh tokens are sent only in the `HttpOnly` `nv_refresh` cookie.
+
+### Authentication API
+
+The four routes are `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `POST /api/v1/auth/logout`, and `GET /api/v1/auth/me`. The contract, request/response schemas, and error responses are in [`api/src/main/resources/static/openapi.yaml`](api/src/main/resources/static/openapi.yaml). OpenAPI is private by default; set `NIGHTVENUE_OPENAPI_PUBLIC=true` only on non-production environments.
+
+Refresh rotation is strict: reusing an old refresh token revokes all of that user's sessions. The frontend must use single-flight refresh handling; concurrent refresh requests with one cookie may log the user out everywhere.
+
+### Reverse proxy configuration (trusted proxies)
+
+By default, Tomcat trusts loopback proxies only (`127.0.0.0/8`, `::1`). Rate limiting derives client IPs via `request.getRemoteAddr()`. If deploying behind a real reverse proxy (e.g., NGINX, AWS ALB, Cloudflare, or Docker bridge), configure `APP_TRUSTED_PROXIES` in your environment with a regular expression matching your proxy's internal IP addresses or CIDR blocks (e.g. `10[.][0-9]+[.][0-9]+[.][0-9]+|172[.](1[6-9]|2[0-9]|3[01])[.][0-9]+[.][0-9]+`). Untrusted peers will have their `X-Forwarded-For` header safely ignored, preventing rate limit bypass.
 
 ## License
 
