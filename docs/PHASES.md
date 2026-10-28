@@ -64,10 +64,10 @@ Pemetaan minggu (target): M1 = Fase 0–2 (+ awal 3); M2 = Fase 3–5; M3 = Fase
 - [ ] Data sintetis ditandai di dokumentasi
 
 ### Fase 3 — Auth dan role
-**FR**: AUTH-01..05, BD-01..03.
+**FR**: AUTH-01..05. `FR-BD-01` selesai di Fase 2; `FR-BD-02..03` diverifikasi saat tabel bisnis Fase 4/5 dibuat.
 **DoD**
 - [ ] Login, refresh dengan rotasi, reuse terdeteksi → semua sesi dicabut
-- [ ] Refresh token httpOnly; access token hanya di memori FE
+- [ ] Refresh token `HttpOnly`; access token dikembalikan di body (penyimpanan hanya di memori FE diverifikasi pada fase frontend)
 - [ ] Otorisasi role dan scoping venue diuji (akses lintas-venue ditolak)
 - [ ] Rate limit pada `/auth/*`
 - [ ] Tidak ada password/token di log

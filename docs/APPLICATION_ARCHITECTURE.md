@@ -127,7 +127,7 @@ DTO in/out (validasi)        MapStruct                  JPA / JdbcTemplate (quer
 
 | Area | Endpoint |
 |---|---|
-| Auth | `POST /api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1/auth/logout` |
+| Auth | `POST /api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1/auth/logout`; `GET /api/v1/auth/me` |
 | Katalog / inventory | `/api/v1/products`, `/api/v1/ingredients`, `/api/v1/recipes`, `/api/v1/inventory`, `POST /api/v1/inventory/{id}/adjust`, `/api/v1/tables` |
 | Order | `POST /api/v1/orders`, `GET /api/v1/orders/{id}`, `POST /api/v1/orders/{id}/items`, `POST /api/v1/orders/{id}/items/{itemId}/serve`, `POST /api/v1/orders/{id}/void` |
 | Payment | `POST /api/v1/orders/{id}/payments`, `POST /api/v1/webhooks/midtrans` (publik, tanpa JWT) |
@@ -144,17 +144,33 @@ DTO in/out (validasi)        MapStruct                  JPA / JdbcTemplate (quer
 | Topik | Rancangan |
 |---|---|
 | Password | BCrypt |
-| Access token | JWT pendek (mis. 15 menit), disimpan di memori FE |
-| Refresh token | Acak panjang, **hash**-nya di Redis dengan rotasi; reuse → cabut semua sesi. Cookie `httpOnly; Secure; SameSite=Lax` (ADR-009) |
+| Access token | JWT HS256, issuer `nightvenue`, TTL default 15 menit; klaim `sub`, `role`, `iss`, `iat`, `exp`. Backend mengembalikannya di body dan tidak dapat membuktikan penyimpanan FE di memori |
+| Refresh token | Token acak 256-bit non-JWT; hanya SHA-256 disimpan di Redis dan diputar atomik lewat Lua. Cookie `nv_refresh`: `HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth` (ADR-009) |
 | Same-origin | Browser hanya memanggil origin FE; Next.js `rewrites` meneruskan `/api/*` |
 | CORS | Whitelist eksplisit |
+| Otorisasi | Role eksplisit/non-hierarkis; venue aktif dan penugasan dibaca dari DB pada setiap request. Venue di luar akses dibalas 404 |
+| Refresh reuse | Kebijakan strict: reuse tombstone mencabut seluruh family refresh milik user dan menulis audit. Dua refresh paralel dengan token sama dapat membuat request yang kalah mencabut semua sesi; FE wajib single-flight |
+| Sesi | Tidak ada umur absolut maksimum pada Month-1. Access JWT tetap berlaku sampai `exp` setelah sesi dicabut/dinonaktifkan; `/me` dan refresh memeriksa status DB |
+| CSRF | CSRF Spring dinonaktifkan untuk API stateless; refresh/logout menggunakan POST dan cookie SameSite=Lax pada same-origin |
 | Webhook Midtrans | Endpoint publik; keamanan dari signature + Status API; idempotensi dari `payment_events` (ADR-006) |
-| Rate limit | Redis token bucket per IP (dan user bila login): `/auth/*`, checkout, `/chat` (10 req/menit/IP sebagai baseline). `X-Forwarded-For` hanya dari proxy tepercaya |
+| Rate limit | Redis token bucket Lua: login 5/IP/menit, refresh 10/IP/menit, logout 20/IP/menit, `/me` 30/user/menit. Redis gagal → 503. IP memakai `request.getRemoteAddr()` setelah Tomcat memproses proxy tepercaya; `X-Forwarded-For` tidak dibaca manual |
+| Rate-limit caveat | Semua kasir pada satu IP publik berbagi bucket. Vercel tidak memiliki IP egress tetap; batas per-IP produksi best-effort sampai ADR-019 diputuskan dan rewrite FE diverifikasi |
 | BYOK | Key di header `X-AI-Key`, hanya untuk request itu; **transit melalui server**; tidak disimpan, tidak dicatat, tidak masuk telemetry error (ADR-013) |
 | Secret | Hanya env; `.env.example` tanpa nilai nyata; gitleaks di CI |
 | Log | Dilarang mencatat password, token, `X-AI-Key`, isi `/chat`; header sensitif difilter |
 | Internal ML | Hanya jaringan Docker, `X-Internal-Token`, port tidak dipublikasikan |
 | PII | Tidak menyimpan nomor identitas; chat tidak dipersistensi |
+
+**Refresh token single-flight contract:** Frontend wajib mengantrikan request refresh (tidak paralel). Dua refresh paralel dengan token sama akan memicu reuse detection → seluruh sesi user dicabut (lihat Addendum ADR-009 v2.1). Implementasi frontend: gunakan queue atau mutex di state manager (Zustand/Redux) sebelum memanggil `/auth/refresh`.
+
+### 6.1 Accepted trade-offs (Phase 3)
+
+1. **Tidak ada expiry absolut sesi:** TTL family diperpanjang setiap rotasi token berhasil (inaktivitas-based expiry). Sesi tetap hidup selama user aktif melakukan rotasi berkala.
+2. **Kredensial dan role dipercaya dari JWT sampai access token kedaluwarsa:** Perubahan role atau penonaktifan user di database memiliki propagation delay maksimal sepanjang TTL access token (15 menit). Jendela ini dipersempit oleh re-check status database saat rotasi refresh token dan pemanggilan `/api/v1/auth/me`.
+3. **Strict reuse tanpa grace window:** Deteksi penggunaan ulang refresh token langsung mencabut seluruh sesi keluarga (family revocation) tanpa masa tenggang toleransi network retry. Frontend wajib menjamin single-flight refresh.
+4. **Lua script single-node Redis:** Skrip atomik rotasi refresh token dan token bucket rate limit dirancang untuk single-node Redis (multi-key beroperasi pada instance yang sama), belum mendukung sharding otomatis Redis Cluster tanpa hash tagging menyeluruh.
+5. **Rate limit berbasis IP pemanggil:** Seluruh kasir atau staf pada satu venue fisik yang berbagi koneksi internet (NAT publik tunggal) berbagi kapasitas bucket IP yang sama.
+6. **Kebutuhan SameSite=Lax:** Cookie autentikasi `nv_refresh` memakai atribut `SameSite=Lax`, mensyaratkan arsitektur frontend berada pada domain/origin yang sama (melalui Next.js API route rewrites) agar cookie otomatis terkirim pada navigasi lintas rute API.
 
 ---
 
@@ -397,7 +413,11 @@ Admin/Manager klik "Prediksi Stok"
 |---|---|---|
 | `menu:{venueId}` | Cache katalog POS | Singkat; invalidasi saat produk berubah |
 | `rl:{scope}:{ip\|userId}` | Token bucket | Sesuai window |
-| `rt:{userId}:{tokenHash}` | Metadata refresh token | Umur refresh |
+| `rt:tok:{sha256(raw)}` | `familyId`, `userId`, status `ACTIVE`/`USED`; status `USED` adalah tombstone deteksi reuse | TTL refresh (tombstone kedaluwarsa sendiri) |
+| `rt:fam:{familyId}` | `userId`, hash token saat ini; keberadaan key menandakan family aktif | Diperpanjang tiap rotasi |
+| `rt:user:{userId}` | Set seluruh `familyId` user untuk pencabutan semua sesi | Diperpanjang tiap rotasi |
+
+Rotasi, pembuatan family, logout family, dan pencabutan semua family memakai Lua atomik. Desain akses key dinamis ini mendukung Redis single-node; Redis Cluster tidak didukung.
 
 Kehilangan Redis hanya memaksa login ulang dan cache dingin; tidak boleh merusak data bisnis.
 
@@ -411,6 +431,10 @@ Log JSON terstruktur + `X-Request-Id` di MDC; `/actuator/health` (liveness/readi
 |---|---|
 | `SPRING_DATASOURCE_URL/USERNAME/PASSWORD`, `REDIS_URL` | Data |
 | `JWT_SECRET`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL` | Token |
+| `AUTH_COOKIE_SECURE` | Default `true`; `false` hanya pada profil `dev`/`test` |
+| `AUTH_RATE_LIMIT_*`, `AUTH_RATE_LIMIT_*_PERIOD` | Kapasitas dan periode token bucket tiap endpoint auth |
+| `APP_TRUSTED_PROXIES` | Regex alamat proxy internal Tomcat; isi hanya proxy yang dipercaya |
+| `NIGHTVENUE_OPENAPI_PUBLIC` | Membuka dokumen OpenAPI hanya bila diaktifkan eksplisit pada lingkungan non-produksi |
 | `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION=false` | Sandbox |
 | `ML_SERVICE_URL`, `ML_INTERNAL_TOKEN`, `ML_CLASSIFY_TIMEOUT_MS`, `ML_FORECAST_TIMEOUT_MS` | Antar-service |
 | `CHAT_CONFIDENCE_THRESHOLD`, `CHAT_RATE_LIMIT_PER_MIN`, `LLM_PRICING_CONFIG` | Chat dan estimasi biaya |
