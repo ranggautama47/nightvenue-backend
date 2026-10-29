@@ -154,7 +154,7 @@ class Phase2DatabaseTests {
         assertEquals(2, count("venues"));
         assertEquals(4, count("users"));
         assertEquals(24, count("venue_tables"));
-        assertEquals(25, count("ingredients"));
+        assertEquals(30, count("ingredients"));
         assertEquals(40, count("products"));
         assertEquals(count("inventory_items"), jdbc.queryForObject("SELECT COUNT(DISTINCT inventory_item_id) FROM inventory_transactions WHERE reference_type='SEED'", Long.class));
 
