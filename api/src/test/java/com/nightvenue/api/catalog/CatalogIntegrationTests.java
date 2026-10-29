@@ -31,6 +31,7 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -274,13 +275,26 @@ class CatalogIntegrationTests {
     }
 
     @Test
-    void changingIngredientSkuToAnotherIngredientsSkuReturnsConflict() throws Exception {
-        String otherSku = fixture + "-other-sku";
-        createIngredient(otherSku, fixture + "-other-ingredient", "ML");
-        mvc.perform(put(INGREDIENTS + "/" + ingredientId).header("Authorization", bearer("MANAGER"))
+    void duplicateIngredientSkuOnCreateReturnsConflictWithSanitizedBody() throws Exception {
+        String manager = bearer("MANAGER");
+        String uniqueSku = fixture + "-unique-sku-" + UUID.randomUUID().toString().substring(0, 8);
+
+        mvc.perform(post(INGREDIENTS).header("Authorization", manager)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(ingredientJson(otherSku, fixture + "-ingredient", "ML")))
-                .andExpect(status().isConflict());
+                        .content(ingredientJson(uniqueSku, fixture + "-ingredient", "ML")))
+                .andExpect(status().isCreated());
+
+        var conflict = mvc.perform(post(INGREDIENTS).header("Authorization", manager)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(ingredientJson(uniqueSku, fixture + "-duplicate", "GRAM")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("A catalog entry with that identifier already exists"))
+                .andReturn();
+
+        String body = conflict.getResponse().getContentAsString();
+        assertFalse(body.contains(uniqueSku), "Raw SKU must not appear in error response");
+        assertFalse(body.contains("ingredients_sku_key"), "Constraint name must not appear in error response");
+        assertFalse(body.toUpperCase().contains("SQL"), "SQL must not appear in error response");
     }
 
     @Test
@@ -293,6 +307,20 @@ class CatalogIntegrationTests {
         assertThrows(DataIntegrityViolationException.class, () -> jdbc.update("""
                 INSERT INTO ingredients (sku, name, unit, is_active) VALUES (?, 'Invalid unit', 'OUNCE', true)
                 """, fixture + "-invalid-unit"));
+    }
+
+        @Test
+    void changingIngredientSkuToAnotherIngredientsSkuReturnsConflict() throws Exception {
+        String otherSku = fixture + "-other-sku";
+        createIngredient(otherSku, fixture + "-other-ingredient", "ML");
+        var conflict = mvc.perform(put(INGREDIENTS + "/" + ingredientId)
+                        .header("Authorization", bearer("MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(ingredientJson(otherSku, fixture + "-ingredient", "ML")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("A catalog entry with that identifier already exists"))
+                .andReturn();
+        assertFalse(conflict.getResponse().getContentAsString().contains(otherSku));
     }
 
     @Test
