@@ -8,6 +8,7 @@ import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.nightvenue.api.common.InvalidRequest;
 
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -60,10 +61,10 @@ public class AuthService {
     @Transactional
     public AuthSession login(String emailInput, String password) {
         if (emailInput == null || emailInput.isBlank() || password == null || password.isBlank()) {
-            throw new com.nightvenue.api.auth.AuthExceptions.InvalidRequest("Email and password are required");
+            throw new InvalidRequest("Email and password are required");
         }
         if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
-            throw new com.nightvenue.api.auth.AuthExceptions.InvalidRequest("Password exceeds 72 UTF-8 bytes");
+            throw new InvalidRequest("Password exceeds 72 UTF-8 bytes");
         }
 
         String email = emailInput.trim().toLowerCase(Locale.ROOT);
