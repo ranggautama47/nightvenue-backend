@@ -56,7 +56,12 @@ public class DemoDataSeeder implements ApplicationRunner {
             i("cooking-oil", "Cooking oil", "ML"), i("peanuts", "Roasted peanuts", "GRAM"),
             i("cassava-chips", "Cassava chips", "GRAM"), i("olives", "Olives", "PIECE"),
             i("agave-syrup", "Agave syrup", "ML"), i("cola", "Cola", "ML"),
-            i("still-water", "Still water", "ML"));
+            i("still-water", "Still water", "ML"),
+            i("bottle-vodka-700", "Neutral spirit bottle 700 ml", "PIECE"),
+            i("bottle-gin-700", "Juniper spirit bottle 700 ml", "PIECE"),
+            i("bottle-rum-700", "White cane spirit bottle 700 ml", "PIECE"),
+            i("bottle-tequila-700", "Agave spirit bottle 700 ml", "PIECE"),
+            i("bottle-whiskey-700", "Oak spirit bottle 700 ml", "PIECE"));
     private static final List<String> CATEGORIES = List.of("Cocktails", "Bottles", "Small Plates");
     private static final List<ProductSeed> PRODUCTS = products();
 
@@ -212,9 +217,10 @@ public class DemoDataSeeder implements ApplicationRunner {
             jdbc.update("INSERT INTO recipes (product_id, version, updated_at) VALUES (?, 1, ?) ON CONFLICT (product_id) DO UPDATE SET version=EXCLUDED.version, updated_at=EXCLUDED.updated_at",
                     products.get(product.sku()), ts(now));
             long recipeId = id("SELECT id FROM recipes WHERE product_id = ?", products.get(product.sku()));
+            jdbc.update("DELETE FROM recipe_items WHERE recipe_id = ?", recipeId);
             for (RecipePart part : product.parts()) {
-                jdbc.update("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity) VALUES (?, ?, ?) ON CONFLICT (recipe_id, ingredient_id) DO UPDATE SET quantity=EXCLUDED.quantity",
-                        recipeId, ingredients.get(part.ingredientSku()), BigDecimal.valueOf(part.quantity()));
+                jdbc.update("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity) VALUES (?, ?, ?)",
+                        recipeId, ingredients.get(part.ingredientSku()), part.quantity());
             }
         }
     }
@@ -314,26 +320,26 @@ public class DemoDataSeeder implements ApplicationRunner {
 
     private static List<ProductSeed> products() {
         List<ProductSeed> values = new ArrayList<>();
-        values.add(p("cocktail-citrus-highball", "Citrus Highball", "Cocktails", 95_000, null, part("vodka", 45), part("orange-juice", 60), part("soda-water", 90), part("ice", 100)));
-        values.add(p("cocktail-garden-mule", "Garden Mule", "Cocktails", 105_000, null, part("gin", 45), part("ginger-beer", 100), part("lime-juice", 15), part("mint", 4)));
-        values.add(p("cocktail-mint-cane", "Mint Cane", "Cocktails", 98_000, null, part("white-rum", 45), part("lime-juice", 20), part("simple-syrup", 15), part("mint", 5), part("soda-water", 90)));
-        values.add(p("cocktail-sunset-sour", "Sunset Sour", "Cocktails", 110_000, null, part("tequila", 45), part("lemon-juice", 25), part("agave-syrup", 15), part("orange-juice", 20)));
-        values.add(p("cocktail-coffee-night", "Coffee Night", "Cocktails", 115_000, null, part("whiskey", 40), part("coffee-liqueur", 20), part("simple-syrup", 10)));
-        values.add(p("cocktail-sparkling-orchard", "Sparkling Orchard", "Cocktails", 120_000, null, part("sparkling-wine", 100), part("orange-juice", 30), part("ice", 80)));
-        values.add(p("cocktail-dark-lime", "Dark Lime", "Cocktails", 108_000, null, part("dark-rum", 45), part("lime-juice", 25), part("cola", 100)));
-        values.add(p("cocktail-tonic-branch", "Tonic Branch", "Cocktails", 102_000, null, part("gin", 45), part("tonic-water", 120), part("lime-juice", 10)));
-        values.add(p("cocktail-agave-glow", "Agave Glow", "Cocktails", 112_000, null, part("tequila", 45), part("agave-syrup", 15), part("lime-juice", 20), part("soda-water", 50)));
-        values.add(p("cocktail-still-morning", "Still Morning", "Cocktails", 92_000, null, part("vodka", 40), part("lemon-juice", 20), part("simple-syrup", 15), part("still-water", 40)));
-        values.add(p("bottle-vodka-700", "Neutral Spirit Bottle 700", "Bottles", 1_250_000, 700, part("vodka", 1)));
-        values.add(p("bottle-gin-700", "Juniper Spirit Bottle 700", "Bottles", 1_450_000, 700, part("gin", 1)));
-        values.add(p("bottle-rum-700", "Cane Spirit Bottle 700", "Bottles", 1_350_000, 700, part("white-rum", 1)));
-        values.add(p("bottle-tequila-700", "Agave Spirit Bottle 700", "Bottles", 1_650_000, 700, part("tequila", 1)));
-        values.add(p("bottle-whiskey-700", "Oak Spirit Bottle 700", "Bottles", 1_750_000, 700, part("whiskey", 1)));
-        values.add(p("snack-crispy-potato", "Crispy Potato", "Small Plates", 58_000, null, part("potato", 250), part("cooking-oil", 20)));
-        values.add(p("snack-roasted-peanuts", "Roasted Peanuts", "Small Plates", 38_000, null, part("peanuts", 120)));
-        values.add(p("snack-cassava-crunch", "Cassava Crunch", "Small Plates", 45_000, null, part("cassava-chips", 150), part("cooking-oil", 10)));
-        values.add(p("snack-olive-picks", "Olive Picks", "Small Plates", 48_000, null, part("olives", 8)));
-        values.add(p("snack-water-pair", "Still Water Pair", "Small Plates", 25_000, null, part("still-water", 2)));
+        values.add(p("cocktail-citrus-highball", "Citrus Highball", "Cocktails", 95_000, null, part("vodka", "45"), part("orange-juice", "60"), part("soda-water", "90"), part("ice", "100")));
+        values.add(p("cocktail-garden-mule", "Garden Mule", "Cocktails", 105_000, null, part("gin", "45"), part("ginger-beer", "100"), part("lime-juice", "15"), part("mint", "4")));
+        values.add(p("cocktail-mint-cane", "Mint Cane", "Cocktails", 98_000, null, part("white-rum", "45"), part("lime-juice", "20"), part("simple-syrup", "15"), part("mint", "5"), part("soda-water", "90")));
+        values.add(p("cocktail-sunset-sour", "Sunset Sour", "Cocktails", 110_000, null, part("tequila", "45"), part("lemon-juice", "25"), part("agave-syrup", "15"), part("orange-juice", "20")));
+        values.add(p("cocktail-coffee-night", "Coffee Night", "Cocktails", 115_000, null, part("whiskey", "40"), part("coffee-liqueur", "20"), part("simple-syrup", "10")));
+        values.add(p("cocktail-sparkling-orchard", "Sparkling Orchard", "Cocktails", 120_000, null, part("sparkling-wine", "100"), part("orange-juice", "30"), part("ice", "80")));
+        values.add(p("cocktail-dark-lime", "Dark Lime", "Cocktails", 108_000, null, part("dark-rum", "45"), part("lime-juice", "25"), part("cola", "100")));
+        values.add(p("cocktail-tonic-branch", "Tonic Branch", "Cocktails", 102_000, null, part("gin", "45"), part("tonic-water", "120"), part("lime-juice", "10")));
+        values.add(p("cocktail-agave-glow", "Agave Glow", "Cocktails", 112_000, null, part("tequila", "45"), part("agave-syrup", "15"), part("lime-juice", "20"), part("soda-water", "50")));
+        values.add(p("cocktail-still-morning", "Still Morning", "Cocktails", 92_000, null, part("vodka", "40"), part("lemon-juice", "20"), part("simple-syrup", "15"), part("still-water", "40")));
+        values.add(p("bottle-vodka-700", "Neutral Spirit Bottle 700", "Bottles", 1_250_000, 700, part("bottle-vodka-700", "1")));
+        values.add(p("bottle-gin-700", "Juniper Spirit Bottle 700", "Bottles", 1_450_000, 700, part("bottle-gin-700", "1")));
+        values.add(p("bottle-rum-700", "Cane Spirit Bottle 700", "Bottles", 1_350_000, 700, part("bottle-rum-700", "1")));
+        values.add(p("bottle-tequila-700", "Agave Spirit Bottle 700", "Bottles", 1_650_000, 700, part("bottle-tequila-700", "1")));
+        values.add(p("bottle-whiskey-700", "Oak Spirit Bottle 700", "Bottles", 1_750_000, 700, part("bottle-whiskey-700", "1")));
+        values.add(p("snack-crispy-potato", "Crispy Potato", "Small Plates", 58_000, null, part("potato", "250"), part("cooking-oil", "20")));
+        values.add(p("snack-roasted-peanuts", "Roasted Peanuts", "Small Plates", 38_000, null, part("peanuts", "120")));
+        values.add(p("snack-cassava-crunch", "Cassava Crunch", "Small Plates", 45_000, null, part("cassava-chips", "150"), part("cooking-oil", "10")));
+        values.add(p("snack-olive-picks", "Olive Picks", "Small Plates", 48_000, null, part("olives", "8")));
+        values.add(p("snack-water-pair", "Still Water Pair", "Small Plates", 25_000, null, part("still-water", "2")));
         return List.copyOf(values);
     }
 
@@ -341,14 +347,14 @@ public class DemoDataSeeder implements ApplicationRunner {
         return new ProductSeed(sku, name, category, price, bottleMl, List.of(parts));
     }
 
-    private static RecipePart part(String sku, double quantity) {
-        return new RecipePart(sku, quantity);
+    private static RecipePart part(String sku, String quantity) {
+        return new RecipePart(sku, new BigDecimal(quantity));
     }
 
     private record VenueSeed(String code, String name, String address) {}
     private record UserSeed(String email, String name, String role) {}
     private record IngredientSeed(String sku, String name, String unit) {}
-    private record RecipePart(String ingredientSku, double quantity) {}
+    private record RecipePart(String ingredientSku, BigDecimal quantity) {}
     private record ProductSeed(String sku, String name, String category, long price, Integer bottleVolumeMl, List<RecipePart> parts) {}
     private record InventorySeed(long id, long venueId, String unit, String location) {}
     private record VenueConfig(ZoneId zone, int cutoff) {}

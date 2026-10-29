@@ -94,9 +94,6 @@ public class ApiExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     ProblemDetail dataIntegrityViolation(DataIntegrityViolationException exception) {
         String sqlState = sqlState(exception);
-        if ("23505".equals(sqlState)) {
-            return problem(HttpStatus.CONFLICT, "The request conflicts with existing data");
-        }
         String traceId = MDC.get("X-Request-Id");
         log.error("Unexpected data integrity failure exceptionClass={} sqlState={} traceId={}",
                 exception.getClass().getName(), sqlState, traceId);
