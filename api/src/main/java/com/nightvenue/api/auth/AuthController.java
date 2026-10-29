@@ -2,6 +2,7 @@ package com.nightvenue.api.auth;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import com.nightvenue.api.common.InvalidRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
@@ -17,7 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.Duration;
 
 import static com.nightvenue.api.auth.AuthExceptions.InvalidRefreshToken;
-import static com.nightvenue.api.auth.AuthExceptions.InvalidRequest;
 
 @RestController
 @RequestMapping("/api/v1/auth")

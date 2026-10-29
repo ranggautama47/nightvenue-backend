@@ -87,7 +87,7 @@ public class AuthSecurityConfiguration {
         CorsConfiguration cors = new CorsConfiguration();
         cors.setAllowedOrigins(Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim).filter(origin -> !origin.isEmpty()).toList());
-        cors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+        cors.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         cors.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Request-Id"));
         cors.setExposedHeaders(List.of("Retry-After", "X-Request-Id"));
         cors.setAllowCredentials(true);
