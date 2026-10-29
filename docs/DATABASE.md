@@ -99,7 +99,7 @@ CK: `age_verified = false OR (age_verified_at IS NOT NULL AND age_verified_by IS
 
 ### 4.2 Katalog
 
-**product_categories**: `id` PK, `name` VARCHAR(100) UQ NN, `sort_order` INT NN default 0.
+**product_categories**: `id` PK, `name` VARCHAR(100) UQ NN, `sort_order` INT NN default 0, `is_active` BOOLEAN NN default true (Phase 4A soft delete). `name` remains globally unique, so inactive names stay reserved.
 
 **products**: `id` PK; `venue_id` FK NN; `category_id` FK; `sku` VARCHAR(40) NN, UQ `(venue_id, sku)`; `name` VARCHAR(150) NN; `price` BIGINT NN CK ≥ 0; `is_bottle_keepable` BOOLEAN NN default false; `bottle_volume_ml` INT CK > 0 (wajib bila `is_bottle_keepable`); `is_active` BOOLEAN NN; `version` BIGINT NN; `created_at`, `updated_at`.
 
