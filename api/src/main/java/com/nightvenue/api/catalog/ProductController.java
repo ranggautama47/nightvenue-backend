@@ -1,5 +1,6 @@
 package com.nightvenue.api.catalog;
 
+import com.nightvenue.api.auth.VenueAccessService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
@@ -26,10 +27,15 @@ import java.util.List;
 public class ProductController {
     private final ProductService products;
     private final RecipeService recipes;
+    private final MenuCacheService menuCache;
+    private final VenueAccessService venues;
 
-    public ProductController(ProductService products, RecipeService recipes) {
+    public ProductController(
+            ProductService products, RecipeService recipes, MenuCacheService menuCache, VenueAccessService venues) {
         this.products = products;
         this.recipes = recipes;
+        this.menuCache = menuCache;
+        this.venues = venues;
     }
 
     @GetMapping
@@ -38,7 +44,12 @@ public class ProductController {
             @Positive @RequestParam long venueId,
             @RequestParam(defaultValue = "false") boolean includeInactive,
             @AuthenticationPrincipal Jwt jwt) {
-        return products.products(venueId, includeInactive && !"CASHIER".equals(jwt.getClaimAsString("role")));
+        venues.requireAccess(venueId);
+        boolean includeInactiveForRequest = includeInactive && !"CASHIER".equals(jwt.getClaimAsString("role"));
+        if ("CASHIER".equals(jwt.getClaimAsString("role"))) {
+            return menuCache.readOrLoad(venueId, () -> products.products(venueId, false));
+        }
+        return products.products(venueId, includeInactiveForRequest);
     }
 
     @PostMapping

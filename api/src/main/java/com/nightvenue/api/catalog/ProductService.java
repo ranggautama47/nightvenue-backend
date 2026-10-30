@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
@@ -23,11 +24,13 @@ public class ProductService {
     private final ProductRepository products;
     private final VenueAccessService venues;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
-    public ProductService(ProductRepository products, VenueAccessService venues, Clock clock) {
+    public ProductService(ProductRepository products, VenueAccessService venues, Clock clock, ApplicationEventPublisher events) {
         this.products = products;
         this.venues = venues;
         this.clock = clock;
+        this.events = events;
     }
 
     public List<ProductRepository.Product> products(long venueId, boolean includeInactive) {
@@ -50,9 +53,11 @@ public class ProductService {
         venues.requireAccess(request.venueId());
         validateBottle(request.bottleKeepable(), request.bottleVolumeMl());
         validateCategory(request.categoryId());
-        return CatalogWriteSupport.persist(() -> products.createProduct(
+        ProductRepository.Product created = CatalogWriteSupport.persist(() -> products.createProduct(
                 request.venueId(), request.categoryId(), request.sku().trim(), request.name().trim(),
                 request.price(), request.bottleKeepable(), request.bottleVolumeMl(), clock.instant()));
+        events.publishEvent(CatalogMutatedEvent.forVenue(request.venueId()));
+        return created;
     }
 
     @Transactional
@@ -61,10 +66,12 @@ public class ProductService {
         venues.requireAccess(existing.venueId());
         validateBottle(request.bottleKeepable(), request.bottleVolumeMl());
         validateCategory(request.categoryId());
-        return CatalogWriteSupport.persist(() -> products.updateProduct(
+        ProductRepository.Product updated = CatalogWriteSupport.persist(() -> products.updateProduct(
                 id, request.categoryId(), request.sku().trim(), request.name().trim(),
                 request.price(), request.bottleKeepable(), request.bottleVolumeMl(), clock.instant())
                 .orElseThrow(ResourceNotFound::new));
+        events.publishEvent(CatalogMutatedEvent.forVenue(existing.venueId()));
+        return updated;
     }
 
     @Transactional
@@ -72,6 +79,7 @@ public class ProductService {
         ProductRepository.Product product = products.findProduct(id).orElseThrow(ResourceNotFound::new);
         venues.requireAccess(product.venueId());
         products.deactivateProduct(id, clock.instant());
+        events.publishEvent(CatalogMutatedEvent.forVenue(product.venueId()));
     }
 
     private void validateCategory(Long categoryId) {
