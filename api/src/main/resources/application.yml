@@ -25,6 +25,9 @@ spring:
 nightvenue:
   seed:
     enabled: false
+  cache:
+    menu:
+      ttl: ${NIGHTVENUE_CACHE_MENU_TTL:PT5M}
   auth:
     jwt-secret: ${JWT_SECRET:}
     access-ttl: ${JWT_ACCESS_TTL:PT15M}

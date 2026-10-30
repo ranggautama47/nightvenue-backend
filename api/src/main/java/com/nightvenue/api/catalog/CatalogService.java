@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -18,25 +19,33 @@ import java.util.Locale;
 @Validated
 public class CatalogService {
     private final CatalogRepository catalog;
+    private final ApplicationEventPublisher events;
 
-    public CatalogService(CatalogRepository catalog) {
+    public CatalogService(CatalogRepository catalog, ApplicationEventPublisher events) {
         this.catalog = catalog;
+        this.events = events;
     }
 
     public List<CatalogRepository.Category> categories(boolean includeInactive) {
         return catalog.findCategories(includeInactive);
     }
 
+    @Transactional
     public CatalogRepository.Category createCategory(CategoryRequest request) {
         String name = request.name().trim();
-        return CatalogWriteSupport.persist(
+        CatalogRepository.Category created = CatalogWriteSupport.persist(
                 () -> catalog.createCategory(name, request.sortOrder() == null ? 0 : request.sortOrder()));
+        events.publishEvent(CatalogMutatedEvent.forAllVenues());
+        return created;
     }
 
+    @Transactional
     public CatalogRepository.Category updateCategory(@Positive long id, CategoryRequest request) {
         String name = request.name().trim();
-        return CatalogWriteSupport.persist(() -> catalog.updateCategory(id, name, request.sortOrder())
+        CatalogRepository.Category updated = CatalogWriteSupport.persist(() -> catalog.updateCategory(id, name, request.sortOrder())
                 .orElseThrow(ResourceNotFound::new));
+        events.publishEvent(CatalogMutatedEvent.forAllVenues());
+        return updated;
     }
 
     @Transactional
@@ -50,6 +59,7 @@ public class CatalogService {
             throw new BusinessRuleViolation("Cannot deactivate category with active products");
         }
         catalog.deactivateCategory(id);
+        events.publishEvent(CatalogMutatedEvent.forAllVenues());
     }
 
     public List<CatalogRepository.Ingredient> ingredients(boolean includeInactive) {
