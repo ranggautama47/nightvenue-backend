@@ -272,9 +272,18 @@ public class DemoDataSeeder implements ApplicationRunner {
                 int dow = date.getDayOfWeek().getValue();
                 int multiplier = (dow == 5 || dow == 6) ? 3 : (dow == 7 ? 2 : 1);
                 BigDecimal sale = BigDecimal.valueOf(multiplier * (10 + random.nextInt(6)));
+                if ("PIECE".equals(item.unit())) {
+                    sale = sale.min(BigDecimal.valueOf(8));
+                }
                 if (balance.compareTo(sale) < 0) {
                     BigDecimal restock = opening.divide(BigDecimal.valueOf(4), 3, java.math.RoundingMode.HALF_UP);
+                    if ("PIECE".equals(item.unit())) {
+                        restock = opening.divide(BigDecimal.valueOf(2), 3, java.math.RoundingMode.HALF_UP);
+                    }
                     balance = append(item, "PURCHASE_IN", restock, balance, date, zone, cutoff);
+                }
+                if (balance.compareTo(sale) <= 0) {
+                    sale = balance.subtract(BigDecimal.ONE).max(BigDecimal.ONE);
                 }
                 balance = append(item, "SALE_DEDUCT", sale.negate(), balance, date, zone, cutoff);
             }
