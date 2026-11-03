@@ -86,7 +86,7 @@ Pemetaan minggu (target): M1 = Fase 0–2 (+ awal 3); M2 = Fase 3–5; M3 = Fase
 - [ ] Satu order aktif per meja (unique index) diuji
 - [ ] Conditional UPDATE; urutan ID asc; rollback penuh saat stok kurang
 - [ ] **Bukti A**: uji konkurensi (N thread, stok terbatas) → stok negatif = 0, jumlah sukses = stok awal / kebutuhan; hasil dilampirkan
-- [ ] Idempotency-Key pada tambah item dan VOID; add-item mengunci baris order dan `order_item` dibuat sebelum ledger
+- [ ] Idempotency-Key wajib pada buka order (ORDER_OPEN), tambah item, dan VOID; add-item mengunci baris order dan `order_item` dibuat sebelum ledger
 - [ ] VOID: RESTORED vs WASTED, ledger-based, exactly-once (UQ + conditional update), ditolak bila ada payment PENDING/PAID
 - [ ] Ambang approval Manager dan batasan WASTED diuji
 - [ ] Owner dapat menjelaskan alur potong-stok dan kompensasi

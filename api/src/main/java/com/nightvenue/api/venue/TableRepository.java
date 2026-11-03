@@ -37,6 +37,25 @@ public class TableRepository {
                 """, TableRepository::map, id).stream().findFirst();
     }
 
+    public boolean hasActiveOrder(long tableId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM orders
+                    WHERE table_id = ?
+                      AND status IN ('OPEN', 'PARTIALLY_PAID')
+                )
+                """, Boolean.class, tableId));
+    }
+
+    public int occupyIfAvailable(long id) {
+        return jdbc.update("""
+                UPDATE venue_tables
+                SET status = 'OCCUPIED', version = version + 1
+                WHERE id = ? AND status = 'AVAILABLE' AND is_active = true
+                """, id);
+    }
+
     public VenueTable create(
             long venueId,
             String code,
