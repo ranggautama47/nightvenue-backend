@@ -51,16 +51,18 @@ class Phase2DatabaseTests {
     @Autowired java.time.Clock clock;
 
     @Test
-    void migrationsValidateAndCreateOnlyPhaseTwoTables() {
+    void migrationsValidateAndCreatePhaseFiveATables() {
         flyway.validate();
         List<String> expected = new java.util.ArrayList<>(SEED_TABLES);
+        expected.add("orders");
+        expected.add("order_items");
         expected.add("flyway_schema_history");
         List<String> actual = jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name", String.class);
         assertEquals(expected.stream().sorted().toList(), actual);
     }
 
     @Test
-    void foreignKeyDeleteActionsMatchDatabaseMatrixAndStayInPhaseTwo() {
+    void foreignKeyDeleteActionsMatchDatabaseMatrixForCurrentSchema() {
         Map<String, String> expected = Map.ofEntries(
                 Map.entry("user_venues.user_id", "c"), Map.entry("user_venues.venue_id", "c"),
                 Map.entry("customers.user_id", "n"), Map.entry("customers.age_verified_by", "r"),
@@ -69,7 +71,11 @@ class Phase2DatabaseTests {
                 Map.entry("recipe_items.ingredient_id", "r"), Map.entry("stock_locations.venue_id", "r"),
                 Map.entry("inventory_items.location_id", "r"), Map.entry("inventory_items.ingredient_id", "r"),
                 Map.entry("inventory_transactions.inventory_item_id", "r"), Map.entry("inventory_transactions.created_by", "r"),
-                Map.entry("venue_tables.venue_id", "r"), Map.entry("audit_logs.venue_id", "n"),
+                Map.entry("venue_tables.venue_id", "r"),
+                Map.entry("orders.venue_id", "r"), Map.entry("orders.table_id", "r"),
+                Map.entry("orders.customer_id", "r"), Map.entry("orders.cashier_id", "r"),
+                Map.entry("order_items.order_id", "r"), Map.entry("order_items.product_id", "r"),
+                Map.entry("audit_logs.venue_id", "n"),
                 Map.entry("audit_logs.actor_user_id", "n"), Map.entry("idempotency_keys.user_id", "c"));
         Map<String, String> actual = new LinkedHashMap<>();
         jdbc.query("""
@@ -81,7 +87,7 @@ class Phase2DatabaseTests {
                 WHERE c.contype='f' AND child.relnamespace='public'::regnamespace
                 """, (org.springframework.jdbc.core.RowCallbackHandler) rs -> actual.put(rs.getString("fk_column"), rs.getString("delete_action")));
         assertEquals(expected, actual);
-        assertTrue(actual.keySet().stream().noneMatch(key -> key.startsWith("orders.") || key.startsWith("payments.")
+        assertTrue(actual.keySet().stream().noneMatch(key -> key.startsWith("payments.")
                 || key.startsWith("bottle_vaults.") || key.startsWith("cashier_shifts.")));
     }
 

@@ -138,7 +138,7 @@ CK: `age_verified = false OR (age_verified_at IS NOT NULL AND age_verified_by IS
 
 **venue_tables**: `id` PK; `venue_id` FK NN; `code` VARCHAR(20) NN, UQ `(venue_id, code)`; `area` VARCHAR(50); `capacity` INT NN CK > 0; `minimum_spend` BIGINT NN default 0 CK ≥ 0; `status` VARCHAR(20) NN CK `AVAILABLE, OCCUPIED, OUT_OF_SERVICE`; `is_active` NN; `version` NN. (`RESERVED` ditambahkan oleh migrasi reservasi yang deferred.)
 
-**orders**
+**orders** — **IMPLEMENTED (Phase 5A in this branch).** `order_number` is generated as `NV-{yyyyMMdd}-{6-digit}` using the global PostgreSQL sequence `order_number_seq`; sequence gaps after rollback are accepted. `uq_orders_active_table` permits at most one OPEN/PARTIALLY_PAID order per non-null table.
 | Kolom | Tipe | Catatan |
 |---|---|---|
 | id | BIGINT | PK |
@@ -158,11 +158,12 @@ CK: `age_verified = false OR (age_verified_at IS NOT NULL AND age_verified_by IS
 | minimum_spend_snapshot | BIGINT | NN default 0 (BR-05) |
 | opened_at | TIMESTAMPTZ | NN |
 | closed_at | TIMESTAMPTZ | |
+| created_at, updated_at | TIMESTAMPTZ | NN |
 | version | BIGINT | NN |
 
 `orders.reservation_id` **tidak ada** di Month-1; ditambahkan oleh migrasi reservasi.
 
-**order_items**
+**order_items** — **IMPLEMENTED (Phase 5A schema); item mutation is PLANNED.** Every status change must update `updated_at`.
 | Kolom | Tipe | Catatan |
 |---|---|---|
 | id | BIGINT | PK |
@@ -175,6 +176,7 @@ CK: `age_verified = false OR (age_verified_at IS NOT NULL AND age_verified_by IS
 | line_total | BIGINT | NN ≥ 0 |
 | status | VARCHAR(10) | NN CK `ORDERED, SERVED, VOIDED` |
 | created_at | TIMESTAMPTZ | NN |
+| updated_at | TIMESTAMPTZ | NN |
 
 Detail void (alasan, pelaku, disposition) ada di `void_logs`, tidak diduplikasi di sini.
 
@@ -323,7 +325,7 @@ Partial UQ: `UNIQUE (cashier_id) WHERE status = 'OPEN'`.
 
 **audit_logs** (append-only): `id` PK; `venue_id` FK nullable; `actor_user_id` FK nullable; `action` VARCHAR(50) NN (mis. `ORDER_VOID`, `STOCK_ADJUST`, `SHIFT_FORCED_REVIEW`, `PAYMENT_ON_CLOSED_ORDER`, `WEBHOOK_REJECTED`); `entity_type` VARCHAR(50) NN; `entity_id` BIGINT; `details` JSONB; `ip_address` VARCHAR(45); `created_at` NN.
 
-**idempotency_keys**: `id` PK; `key` UUID NN; `scope` VARCHAR(40) NN CK `ORDER_ADD_ITEMS, PAYMENT_CREATE, ORDER_VOID, BOTTLE_DEPOSIT, BOTTLE_REDEEM`; `user_id` FK NN; `request_hash` CHAR(64) NN; `response_status` INT; `response_body` JSONB; `created_at` NN. UQ `(scope, user_id, key)`. Dibersihkan berkala (> 24 jam). Scope baru butuh migrasi.
+**idempotency_keys**: `id` PK; `key` UUID NN; `scope` VARCHAR(40) NN CK `ORDER_ADD_ITEMS, PAYMENT_CREATE, ORDER_VOID, BOTTLE_DEPOSIT, BOTTLE_REDEEM, ORDER_OPEN`; `user_id` FK NN; `request_hash` CHAR(64) NN; `response_status` INT nullable; `response_body` JSONB nullable; `created_at` NN. UQ `(scope, user_id, key)`. **ORDER_OPEN — IMPLEMENTED (Phase 5A):** reserve and response completion occur in the order transaction. Records are retained for at least 24 hours; cleanup is deferred. After a record is actually removed, retries with that key are no longer guaranteed to replay the original request.
 
 ---
 
@@ -375,8 +377,8 @@ ALTER TABLE idempotency_keys ADD CONSTRAINT uq_idem UNIQUE (scope, user_id, key)
 
 | Tabel | Index | Untuk |
 |---|---|---|
-| orders | `(venue_id, business_date, status)` | Laporan per malam |
-| order_items | `(order_id)` | Muat item |
+| orders | `(venue_id, business_date, status)`; `ix_orders_venue_business_date_status` — **IMPLEMENTED (Phase 5A)** | Laporan per malam |
+| order_items | `(order_id)`; `ix_order_items_order_id` — **IMPLEMENTED (Phase 5A)** | Muat item |
 | inventory_transactions | `(inventory_item_id, created_at)`, `(business_date)` | Riwayat; agregasi forecast; pembalikan void |
 | payments | `(order_id)`, `(venue_id, business_date)`, `(shift_id)`, `(provider_order_id)` | Total bayar; agregasi kas shift; lookup webhook |
 | bottle_vaults | `(customer_id, status)`, `(expiry_date) WHERE status = 'ACTIVE'` | Daftar botol; job expiry |

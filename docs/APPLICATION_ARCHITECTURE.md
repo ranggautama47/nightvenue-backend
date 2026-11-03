@@ -50,7 +50,7 @@ Versi dipin di Phase 1 (ADR-018) dan dicatat di `CONTEXT.md`. Yang dikunci adala
 | Lapisan | Teknologi |
 |---|---|
 | Frontend | Next.js (App Router), TypeScript strict, Tailwind, shadcn/ui, TanStack Query, Zustand, React Hook Form + Zod, Midtrans Snap.js |
-| Backend | Java LTS, Spring Boot, Spring Security, Spring Data JPA/Hibernate, Flyway, MapStruct, springdoc-openapi, Actuator, rate limit via Redis |
+| Backend | Java LTS, Spring Boot, Spring Security, Spring JDBC (`JdbcTemplate`), Flyway, MapStruct, springdoc-openapi, Actuator, rate limit via Redis |
 | ML | Python, FastAPI, scikit-learn, pandas, joblib |
 | Data | PostgreSQL, Redis |
 | Test | JUnit 5, Mockito, Testcontainers, Vitest, RTL, pytest, k6 |
@@ -66,10 +66,10 @@ nightvenue-backend/
 │   ├── common/        error, idempotency, security util, audit, Clock
 │   ├── businessday/   BusinessDateService
 │   ├── auth/
-│   ├── venue/
+│   ├── venue/        IMPLEMENTED (Phase 4D): table CRUD (`TableController`, `TableService`, `TableRepository`)
 │   ├── catalog/       product, category, ingredient, recipe
 │   ├── inventory/     inventory, ledger, adjustment
-│   ├── pos/           table, order, order item, void
+│   ├── pos/           IMPLEMENTED (Phase 5A): order endpoints and persistence (`OrderController`, `OrderService`, `OrderRepository`)
 │   ├── payment/       payment, PaymentGateway, webhook
 │   ├── bottle/        vault, redeem, expiry job
 │   ├── shift/         cashier shift, cutoff job
@@ -97,12 +97,12 @@ Dua repo saja (ADR-008). Paket untuk fitur deferred (reservation, loyalty, trans
 
 ```text
 Controller → Service (@Transactional, aturan bisnis) → Repository
-DTO in/out (validasi)        MapStruct                  JPA / JdbcTemplate (query atomic)
+DTO in/out (validasi)                                   JdbcTemplate
 ```
 
 1. Entity tidak keluar dari controller; selalu DTO.
 2. `@Transactional` hanya di service; batas transaksi = satu use case.
-3. Query atomic stok dan vault ditulis eksplisit (`@Modifying`), bukan load-modify-save.
+3. Query atomic stok dan vault ditulis eksplisit melalui `JdbcTemplate`, bukan load-modify-save.
 4. Otorisasi dua lapis: `@PreAuthorize` (role) dan pengecekan venue di service.
 5. Panggilan HTTP eksternal (Midtrans, ML, LLM) **tidak boleh** di dalam transaksi yang memegang lock.
 6. Waktu hanya dari `Clock` yang diinjeksi; business date hanya dari `BusinessDateService` (ADR-001).
@@ -117,7 +117,7 @@ DTO in/out (validasi)        MapStruct                  JPA / JdbcTemplate (quer
 |---|---|
 | Prefix | `/api/v1/*` (perubahan breaking → `/api/v2`). Actuator tidak diberi prefix |
 | Format error | RFC 7807 `application/problem+json` (`type`, `title`, `status`, `detail`, `traceId`, `errors[]`) |
-| Idempotency | `Idempotency-Key` (UUID) wajib pada: tambah item order, buat payment, VOID, deposit botol, redeem botol. Unique `(scope, user, key)`; request ulang → respons sama |
+| Idempotency | `Idempotency-Key` (UUID) wajib pada pembukaan order (`ORDER_OPEN`), tambah item, payment, VOID, deposit, dan redeem. Unique `(scope, user, key)`; request identik diputar ulang, payload berbeda ditolak. Retensi minimum 24 jam; cleanup ditunda ke fase berikutnya. |
 | Paginasi | `page`, `size` (maks 100) |
 | Correlation | `X-Request-Id` masuk MDC dan respons |
 | Status | 400 validasi, 401, 403 role, 404 tidak ada / di luar venue, 409 konflik (stok, state, duplikat, shift), 422 aturan bisnis, 429 rate limit |
@@ -128,8 +128,9 @@ DTO in/out (validasi)        MapStruct                  JPA / JdbcTemplate (quer
 | Area | Endpoint |
 |---|---|
 | Auth | `POST /api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1/auth/logout`; `GET /api/v1/auth/me` |
-| Katalog / inventory | `/api/v1/products`, `/api/v1/ingredients`, `/api/v1/recipes`, `/api/v1/inventory`, `POST /api/v1/inventory/{id}/adjust`, `/api/v1/tables` |
-| Order | `POST /api/v1/orders`, `GET /api/v1/orders/{id}`, `POST /api/v1/orders/{id}/items`, `POST /api/v1/orders/{id}/items/{itemId}/serve`, `POST /api/v1/orders/{id}/void` |
+| Katalog / inventory | `/api/v1/products`, `/api/v1/ingredients`, `/api/v1/recipes`, `/api/v1/inventory`, `POST /api/v1/inventory/{id}/adjust` |
+| Venue / tables | **IMPLEMENTED (Phase 4D):** `/api/v1/tables`. **Phase 5A guard:** manual release or delete is blocked while an active order exists. |
+| Order | **IMPLEMENTED (Phase 5A):** `POST /api/v1/orders` requires `Idempotency-Key` (UUID); same key and payload replays the original 201 response snapshot, while a changed payload returns 422. `GET /api/v1/orders/{id}`; roles ADMIN, MANAGER, CASHIER; access outside the user's venue returns 404. **PLANNED:** add-item, serve, and void endpoints listed below. |
 | Payment | `POST /api/v1/orders/{id}/payments`, `POST /api/v1/webhooks/midtrans` (publik, tanpa JWT) |
 | Bottle | `POST /api/v1/bottles` (deposit, `Idempotency-Key`), `POST /api/v1/bottles/redeem`, `GET /api/v1/bottles`, `GET /api/v1/customers/me/bottles` |
 | Shift | `POST /api/v1/shifts/open`, `POST /api/v1/shifts/{id}/submit`, `POST /api/v1/shifts/{id}/review`, `GET /api/v1/shifts` |

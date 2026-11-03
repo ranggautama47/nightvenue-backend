@@ -17,6 +17,7 @@ import org.springframework.validation.annotation.Validated;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @Validated
@@ -79,6 +80,7 @@ public class TableService {
     public TableRepository.VenueTable update(long id, UpdateRequest request) {
         TableRepository.VenueTable current = tables.findByIdForUpdate(id).orElseThrow(ResourceNotFound::new);
         venues.requireAccess(current.venueId());
+        boolean activeOrder = tables.hasActiveOrder(id);
         String normalizedCode = request.code() == null ? current.code() : request.code().trim();
         String normalizedArea = request.area() == null ? current.area() : request.area().trim();
         int capacity = request.capacity() == null ? current.capacity() : request.capacity();
@@ -89,8 +91,14 @@ public class TableService {
         if (minimumSpend < 0) {
             throw new BusinessRuleViolation("Minimum spend cannot be negative");
         }
-        String status = request.status() == null ? current.status() : request.status().toUpperCase();
-        validateStatus(status);
+        String status = request.status() == null ? current.status() : request.status().toUpperCase(Locale.ROOT);
+        boolean statusChanged = !status.equals(current.status());
+        if (activeOrder && statusChanged) {
+            throw new BusinessRuleViolation("Table has an active order");
+        }
+        if (statusChanged) {
+            validateStatus(status);
+        }
         try {
             return tables.update(id, normalizedCode, normalizedArea, capacity, minimumSpend, status)
                     .orElseThrow(ResourceNotFound::new);
@@ -106,6 +114,9 @@ public class TableService {
     public void delete(long id) {
         TableRepository.VenueTable table = tables.findByIdForUpdate(id).orElseThrow(ResourceNotFound::new);
         venues.requireAccess(table.venueId());
+        if (tables.hasActiveOrder(id)) {
+            throw new BusinessRuleViolation("Table has an active order");
+        }
         if (!table.active()) {
             return;
         }

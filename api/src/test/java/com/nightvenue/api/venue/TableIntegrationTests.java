@@ -67,8 +67,19 @@ class TableIntegrationTests {
 
     @AfterEach
     void removeFixtures() {
-        if (venueAId > 0) jdbc.update("DELETE FROM venue_tables WHERE venue_id = ?", venueAId);
-        if (venueBId > 0) jdbc.update("DELETE FROM venue_tables WHERE venue_id = ?", venueBId);
+        jdbc.update("""
+                DELETE FROM order_items
+                WHERE order_id IN (
+                    SELECT o.id FROM orders o JOIN venues v ON v.id = o.venue_id
+                    WHERE v.code LIKE ?
+                )
+                """, fixture + "%");
+        jdbc.update("""
+                DELETE FROM orders
+                WHERE venue_id IN (SELECT id FROM venues WHERE code LIKE ?)
+                """, fixture + "%");
+        jdbc.update("DELETE FROM venue_tables WHERE venue_id IN (SELECT id FROM venues WHERE code LIKE ?)",
+                fixture + "%");
         if (fixture != null) {
             jdbc.update("DELETE FROM users WHERE email LIKE ?", fixture.toLowerCase() + "-%@test.local");
             jdbc.update("DELETE FROM venues WHERE code IN (?, ?)",
@@ -205,6 +216,66 @@ class TableIntegrationTests {
     }
 
     @Test
+    void activeOrderBlocksStatusChangesAndDeletion() throws Exception {
+        long id = insertTable(venueAId, fixture + "-aguard");
+        insertOrder(venueAId, id, "OPEN");
+        jdbc.update("UPDATE venue_tables SET status = 'OCCUPIED' WHERE id = ?", id);
+        String auth = bearer(managerId, "MANAGER");
+
+        mvc.perform(put(TABLES + "/" + id).header("Authorization", auth)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"AVAILABLE\"}"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value("Table has an active order"));
+        mvc.perform(delete(TABLES + "/" + id).header("Authorization", auth))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value("Table has an active order"));
+    }
+
+    @Test
+    void activeOrderBlocksOutOfServiceStatus() throws Exception {
+        long id = insertTable(venueAId, fixture.substring(0, 7) + "-oos");
+        insertOrder(venueAId, id, "OPEN");
+        String auth = bearer(managerId, "MANAGER");
+
+        mvc.perform(put(TABLES + "/" + id).header("Authorization", auth)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"OUT_OF_SERVICE\"}"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value("Table has an active order"));
+    }
+
+    @Test
+    void unchangedOccupiedStatusAndOmittedStatusAreAllowedWithAnActiveOrder() throws Exception {
+        long id = insertTable(venueAId, fixture + "-same");
+        insertOrder(venueAId, id, "OPEN");
+        jdbc.update("UPDATE venue_tables SET status = 'OCCUPIED' WHERE id = ?", id);
+        String auth = bearer(managerId, "MANAGER");
+
+        mvc.perform(put(TABLES + "/" + id).header("Authorization", auth)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"area\":\"Updated Area\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("OCCUPIED"));
+        mvc.perform(put(TABLES + "/" + id).header("Authorization", auth)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"OCCUPIED\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("OCCUPIED"));
+    }
+
+    @Test
+    void paidOrderNoLongerBlocksTableStatusChangesOrDeletion() throws Exception {
+        long id = insertTable(venueAId, fixture + "-paid");
+        insertOrder(venueAId, id, "PAID");
+        jdbc.update("UPDATE venue_tables SET status = 'OCCUPIED' WHERE id = ?", id);
+        String auth = bearer(managerId, "MANAGER");
+
+        mvc.perform(put(TABLES + "/" + id).header("Authorization", auth)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"AVAILABLE\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("AVAILABLE"));
+        mvc.perform(delete(TABLES + "/" + id).header("Authorization", auth))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
     void availableAndOutOfServiceStatusesAreAcceptedOnManualUpdate() throws Exception {
         long id = insertTable(venueAId, fixture + "-status");
         String auth = bearer(managerId, "MANAGER");
@@ -248,6 +319,18 @@ class TableIntegrationTests {
                 INSERT INTO venue_tables (venue_id, code, capacity, minimum_spend, status, is_active, version)
                 VALUES (?, ?, 4, 0, 'AVAILABLE', true, 0) RETURNING id
                 """, Long.class, venueId, code);
+    }
+
+    private long insertOrder(long venueId, long tableId, String status) {
+        return jdbc.queryForObject("""
+                INSERT INTO orders (
+                    venue_id, order_number, table_id, cashier_id, business_date, status,
+                    subtotal, total_due, opened_at, created_at, updated_at, version
+                )
+                VALUES (?, ?, ?, ?, CURRENT_DATE, ?, 0, 0, now(), now(), now(), 0)
+                RETURNING id
+                """, Long.class, venueId, fixture + "-" + UUID.randomUUID().toString().substring(0, 8),
+                tableId, cashierId, status);
     }
 
     private String createJson(long venueId, String code) {

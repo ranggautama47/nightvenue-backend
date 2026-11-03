@@ -29,6 +29,16 @@ Satu-satunya tempat ADR. `APPLICATION_ARCHITECTURE.md` hanya menunjuk ke sini.
 
 ---
 
+## PM Decision — Idempotency-Key on POST /orders (Phase 5A)
+
+Approved for Phase 5A. `POST /api/v1/orders` requires a UUID `Idempotency-Key` for both table and walk-in orders. Scope is `ORDER_OPEN`, with identity `(scope, user_id, key)`; the cashier identity comes only from the JWT. The normalized request hash uses `venueId|tableId|customerId`, with null values represented by `-`.
+
+An identical retry returns HTTP 201 and the original creation-time response snapshot without creating another order, consuming another sequence value, or touching the table. Reusing the key with a different normalized payload returns 422. The snapshot is stored and replayed through the normal response serializer.
+
+Records are retained for at least 24 hours. Cleanup is deferred; after a record is actually removed, replay of an old key is no longer guaranteed. This decision reverses the earlier required-list that omitted order opening and extends item 4 of the Phase 5 Definition of Done in PHASES.md.
+
+---
+
 ## ADR-001 — Business Day Cutoff
 
 ### Status

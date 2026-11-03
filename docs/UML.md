@@ -259,7 +259,7 @@ classDiagram
 
 ## 4. Sequence
 
-### 4.1 Buat order dan tambah item (Stock-at-Order)
+### 4.1 Buat order — IMPLEMENTED (Phase 5A); tambah item — PLANNED (Stock-at-Order)
 
 ```mermaid
 sequenceDiagram
@@ -270,10 +270,25 @@ sequenceDiagram
     participant D as PostgreSQL
 
     K->>A: POST /api/v1/orders (meja)
-    A->>B: currentBusinessDate(venue.timezone, venue.businessDayCutoffHour)
+    A->>D: BEGIN
+    A->>D: reserve (ORDER_OPEN, user, key, payload hash, created_at)
+    alt Key already exists
+        A->>D: find request_hash, response_status, response_body
+        alt Hash differs
+            A-->>K: 422
+        else Same payload with completed response
+            A-->>K: deserialize snapshot and return 201 (no new order number or table lock)
+        end
+    else New key
+    A->>B: businessDate(now, venue.timezone, venue.businessDayCutoffHour)
     B-->>A: business_date
+    A->>D: SELECT venue_table FOR UPDATE (jika meja dipilih)
     A->>D: INSERT order OPEN (unik per meja aktif)
+    A->>D: UPDATE venue_table AVAILABLE → OCCUPIED (dalam transaksi yang sama)
+    A->>D: complete response snapshot (201)
+    A->>D: COMMIT
     A-->>K: order
+    end
 
     K->>A: POST /api/v1/orders/id/items (Idempotency-Key)
     A->>D: BEGIN
