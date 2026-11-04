@@ -38,6 +38,17 @@ public class OrderController {
         return orders.open(request, idempotencyKey, jwt.getSubject());
     }
 
+    @PostMapping("/{id}/items")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    @ResponseStatus(HttpStatus.CREATED)
+    public OrderWithItems addItems(
+            @PathVariable @Positive long id,
+            @Valid @RequestBody AddOrderItemsRequest request,
+            @RequestHeader("Idempotency-Key") UUID idempotencyKey,
+            @AuthenticationPrincipal Jwt jwt) {
+        return orders.addItems(id, request, idempotencyKey, jwt.getSubject());
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public OrderRepository.Order get(@PathVariable @Positive long id) {

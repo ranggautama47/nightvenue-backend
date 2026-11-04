@@ -5,8 +5,10 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.Date;
 import java.sql.Timestamp;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -74,6 +76,101 @@ public class OrderRepository {
                 """, OrderRepository::mapOrder, id).stream().findFirst();
     }
 
+    public Optional<Order> findOrderForUpdate(long id) {
+        return jdbc.query("""
+                SELECT id, venue_id, order_number, table_id, customer_id, cashier_id, business_date, status,
+                       subtotal, discount_amount, service_charge_amount, tax_amount, total_due, paid_total,
+                       minimum_spend_snapshot, opened_at, closed_at, version
+                FROM orders
+                WHERE id = ?
+                FOR UPDATE
+                """, OrderRepository::mapOrder, id).stream().findFirst();
+    }
+
+    public Optional<VenueRates> findVenueRates(long venueId) {
+        return jdbc.query("""
+                SELECT tax_rate_bps, service_charge_bps
+                FROM venues
+                WHERE id = ?
+                """, (rs, row) -> new VenueRates(
+                rs.getInt("tax_rate_bps"), rs.getInt("service_charge_bps")), venueId)
+                .stream().findFirst();
+    }
+
+    public Optional<Long> findBarLocationId(long venueId) {
+        return jdbc.query("""
+                SELECT id
+                FROM stock_locations
+                WHERE venue_id = ? AND type = 'BAR'
+                """, (rs, row) -> rs.getLong("id"), venueId)
+                .stream().findFirst();
+    }
+
+    public Optional<Long> findInventoryItemId(long locationId, long ingredientId) {
+        return jdbc.query("""
+                SELECT id
+                FROM inventory_items
+                WHERE location_id = ? AND ingredient_id = ?
+                """, (rs, row) -> rs.getLong("id"), locationId, ingredientId)
+                .stream().findFirst();
+    }
+
+    public OrderItem insertOrderItem(
+            long orderId,
+            long productId,
+            String productNameSnapshot,
+            long unitPriceSnapshot,
+            int quantity,
+            long lineTotal,
+            Instant now) {
+        Timestamp timestamp = Timestamp.from(now);
+        return jdbc.queryForObject("""
+                INSERT INTO order_items (
+                    order_id, product_id, item_type, product_name_snapshot,
+                    unit_price_snapshot, quantity, line_total, status, created_at, updated_at
+                )
+                VALUES (?, ?, 'PRODUCT', ?, ?, ?, ?, 'ORDERED', ?, ?)
+                RETURNING id, order_id, product_id, item_type, product_name_snapshot,
+                          unit_price_snapshot, quantity, line_total, status, created_at, updated_at
+                """, OrderRepository::mapOrderItem,
+                orderId, productId, productNameSnapshot, unitPriceSnapshot, quantity, lineTotal,
+                timestamp, timestamp);
+    }
+
+    public List<OrderItem> findOrderItems(long orderId) {
+        return jdbc.query("""
+                SELECT id, order_id, product_id, item_type, product_name_snapshot,
+                       unit_price_snapshot, quantity, line_total, status, created_at, updated_at
+                FROM order_items
+                WHERE order_id = ?
+                ORDER BY id ASC
+                """, OrderRepository::mapOrderItem, orderId);
+    }
+
+    public BigDecimal calculateSubtotal(long orderId) {
+        return jdbc.queryForObject("""
+                SELECT COALESCE(SUM(line_total), 0)
+                FROM order_items
+                WHERE order_id = ? AND status != 'VOIDED'
+                """, BigDecimal.class, orderId);
+    }
+
+    public void updateOrderTotals(
+            long id,
+            long subtotal,
+            long serviceChargeAmount,
+            long taxAmount,
+            long totalDue,
+            Instant updatedAt) {
+        jdbc.update("""
+                UPDATE orders
+                SET subtotal = ?, service_charge_amount = ?, tax_amount = ?, total_due = ?,
+                    version = version + 1, updated_at = ?
+                WHERE id = ?
+                """,
+                subtotal, serviceChargeAmount, taxAmount, totalDue, Timestamp.from(updatedAt), id);
+    }
+
     private static Order mapOrder(java.sql.ResultSet rs, int row) throws java.sql.SQLException {
         Timestamp closedAt = rs.getTimestamp("closed_at");
         return new Order(
@@ -97,7 +194,25 @@ public class OrderRepository {
                 rs.getLong("version"));
     }
 
+    private static OrderItem mapOrderItem(java.sql.ResultSet rs, int row) throws java.sql.SQLException {
+        return new OrderItem(
+                rs.getLong("id"),
+                rs.getLong("order_id"),
+                rs.getLong("product_id"),
+                rs.getString("item_type"),
+                rs.getString("product_name_snapshot"),
+                rs.getLong("unit_price_snapshot"),
+                rs.getInt("quantity"),
+                rs.getLong("line_total"),
+                rs.getString("status"),
+                rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("updated_at").toInstant());
+    }
+
     public record VenueContext(String timezone, int businessDayCutoffHour) {
+    }
+
+    public record VenueRates(int taxRateBps, int serviceChargeBps) {
     }
 
     public record Order(
@@ -119,5 +234,19 @@ public class OrderRepository {
             Instant openedAt,
             Instant closedAt,
             long version) {
+    }
+
+    public record OrderItem(
+            long id,
+            long orderId,
+            long productId,
+            String itemType,
+            String productNameSnapshot,
+            long unitPriceSnapshot,
+            int quantity,
+            long lineTotal,
+            String status,
+            Instant createdAt,
+            Instant updatedAt) {
     }
 }

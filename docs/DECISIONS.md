@@ -39,6 +39,23 @@ Records are retained for at least 24 hours. Cleanup is deferred; after a record 
 
 ---
 
+## PM Decision — Tax Base and Financial Calculations (Phase 5B)
+
+The service-charge and tax calculation base is a NightVenue product rule decided by PM. It is not sourced from PRD/ADR-007 and is not a statement about Indonesian tax law.
+
+The approved formula is:
+
+```text
+base = subtotal - discount_amount
+service_charge_amount = applyBps(base, service_charge_bps)
+tax_amount = applyBps(base, tax_rate_bps)
+total_due = base + service_charge_amount + tax_amount
+```
+
+`MoneyMath.applyBps(base, bps)` uses BigDecimal, divides by 10000 with `RoundingMode.HALF_UP`, and converts with `longValueExact()`.
+
+---
+
 ## ADR-001 — Business Day Cutoff
 
 ### Status
