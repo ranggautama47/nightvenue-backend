@@ -292,7 +292,13 @@ sequenceDiagram
 
     K->>A: POST /api/v1/orders/id/items (Idempotency-Key)
     A->>D: BEGIN
+    A->>D: reserve (ORDER_ADD_ITEMS, user, key, payload hash)
+    alt Key already exists with same payload
+        A->>D: read completed response snapshot
+        A-->>K: 201 original response (no new item or deduction)
+    else New key
     A->>D: kunci baris order (FOR UPDATE)
+    A->>D: resolve dan validasi tiap product + recipe unik satu kali
     A->>D: INSERT order_items (dapat order_item_id)
     A->>I: deduct untuk tiap bahan (urut ID asc)
     I->>D: UPDATE inventory_items WHERE quantity >= need
@@ -304,7 +310,10 @@ sequenceDiagram
         I->>D: INSERT ledger SALE_DEDUCT (ref order_item_id)
         A->>D: hitung ulang total
         A->>D: COMMIT
-        A-->>K: 200 order
+        A->>D: complete idempotency response snapshot
+        A->>D: COMMIT
+        A-->>K: 201 order
+    end
     end
 ```
 
