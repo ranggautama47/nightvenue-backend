@@ -91,6 +91,11 @@ public class ApiExceptionHandler {
         return problem(HttpStatus.CONFLICT, exception.getMessage());
     }
 
+    @ExceptionHandler(ManagerApprovalRequired.class)
+    ProblemDetail managerApprovalRequired(ManagerApprovalRequired exception) {
+        return problem(HttpStatus.FORBIDDEN, "MANAGER_APPROVAL_REQUIRED");
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     ProblemDetail dataIntegrityViolation(DataIntegrityViolationException exception) {
         String sqlState = sqlState(exception);

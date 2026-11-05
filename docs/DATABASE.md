@@ -33,7 +33,8 @@ Pendamping: `PRD.md` (BR-xx), `DECISIONS.md` (alasan), `UML.md` (state machine),
 | 2 | `venues`, `users`, `user_venues`, `customers`, `product_categories`, `products`, `ingredients`, `recipes`, `recipe_items`, `stock_locations`, `inventory_items`, `inventory_transactions`, `venue_tables`, `audit_logs`, `idempotency_keys` |
 | 5 | `orders`, `order_items` |
 | 6 | `payments`, `payment_events` |
-| 7 | `void_logs`, `bottle_vaults`, `bottle_vault_transactions` |
+| 5 | `void_logs` |
+| 7 | `bottle_vaults`, `bottle_vault_transactions` |
 | 8 | `cashier_shifts` (+ migrasi menambah `payments.shift_id` dan FK-nya) |
 | 9 | `stock_forecasts` |
 | 10 | `venue_faqs`, `promotions`, `chat_route_logs` |
@@ -225,11 +226,11 @@ Catatan: `payment_events` adalah **satu record kanonik per `event_key`** (hasil 
 | venue_id | BIGINT | FK NN |
 | order_id | BIGINT | FK NN |
 | order_item_id | BIGINT | FK NN, **UQ** (satu item hanya dapat di-void sekali; penjamin exactly-once) |
-| batch_id | UUID | NN (mengelompokkan item dari satu aksi VOID order) |
+| batch_id | UUID | NN (one UUID groups all items in one VOID action) |
 | voided_by | BIGINT | FK→users NN |
 | approved_by | BIGINT | FK→users nullable (diisi bila di atas ambang dan Manager mengeksekusi) |
 | reason | VARCHAR(255) | NN |
-| disposition | VARCHAR(10) | NN CK `RESTORED, WASTED` |
+| disposition | VARCHAR(10) | NN CK `RESTORED, WASTED`; default applied by service, no database DEFAULT |
 | item_value | BIGINT | NN ≥ 0 (`line_total` saat void) |
 | created_at | TIMESTAMPTZ | NN |
 
@@ -379,11 +380,11 @@ ALTER TABLE idempotency_keys ADD CONSTRAINT uq_idem UNIQUE (scope, user_id, key)
 |---|---|---|
 | orders | `(venue_id, business_date, status)`; `ix_orders_venue_business_date_status` — **IMPLEMENTED (Phase 5A)** | Laporan per malam |
 | order_items | `(order_id)`; `ix_order_items_order_id` — **IMPLEMENTED (Phase 5A)** | Muat item |
-| inventory_transactions | `(inventory_item_id, created_at)`, `(business_date)` | Riwayat; agregasi forecast; pembalikan void |
+| inventory_transactions | `(inventory_item_id, created_at)`, `(business_date)`, `(reference_type, reference_id)`; `ix_inventory_transactions_ref` | Riwayat; agregasi forecast; pembalikan void |
 | payments | `(order_id)`, `(venue_id, business_date)`, `(shift_id)`, `(provider_order_id)` | Total bayar; agregasi kas shift; lookup webhook |
 | bottle_vaults | `(customer_id, status)`, `(expiry_date) WHERE status = 'ACTIVE'` | Daftar botol; job expiry |
 | cashier_shifts | `(venue_id, business_date, status)` | Antrian review manager |
-| void_logs | `(order_id)` | Telusur void per order |
+| void_logs | `(order_id)`; `ix_void_logs_order_id` | Telusur void per order |
 | chat_route_logs | `(created_at)`, `(route)` | Analisis biaya |
 | audit_logs | `(entity_type, entity_id)`, `(created_at)` | Penelusuran |
 

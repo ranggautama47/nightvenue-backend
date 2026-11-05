@@ -87,6 +87,20 @@ public class OrderRepository {
                 """, OrderRepository::mapOrder, id).stream().findFirst();
     }
 
+    public int voidIfOpen(long id, Instant now) {
+        return jdbc.update("""
+                UPDATE orders SET status = 'VOIDED', closed_at = ?, updated_at = ?, version = version + 1
+                WHERE id = ? AND status = 'OPEN'
+                """, Timestamp.from(now), Timestamp.from(now), id);
+    }
+
+    public int serveIfOrdered(long orderId, long itemId, Instant now) {
+        return jdbc.update("""
+                UPDATE order_items SET status = 'SERVED', updated_at = ?
+                WHERE id = ? AND order_id = ? AND status = 'ORDERED'
+                """, Timestamp.from(now), itemId, orderId);
+    }
+
     public Optional<VenueRates> findVenueRates(long venueId) {
         return jdbc.query("""
                 SELECT tax_rate_bps, service_charge_bps

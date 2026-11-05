@@ -56,6 +56,7 @@ class Phase2DatabaseTests {
         List<String> expected = new java.util.ArrayList<>(SEED_TABLES);
         expected.add("orders");
         expected.add("order_items");
+        expected.add("void_logs");
         expected.add("flyway_schema_history");
         List<String> actual = jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name", String.class);
         assertEquals(expected.stream().sorted().toList(), actual);
@@ -75,6 +76,9 @@ class Phase2DatabaseTests {
                 Map.entry("orders.venue_id", "r"), Map.entry("orders.table_id", "r"),
                 Map.entry("orders.customer_id", "r"), Map.entry("orders.cashier_id", "r"),
                 Map.entry("order_items.order_id", "r"), Map.entry("order_items.product_id", "r"),
+                Map.entry("void_logs.venue_id", "r"), Map.entry("void_logs.order_id", "r"),
+                Map.entry("void_logs.order_item_id", "r"), Map.entry("void_logs.voided_by", "r"),
+                Map.entry("void_logs.approved_by", "r"),
                 Map.entry("audit_logs.venue_id", "n"),
                 Map.entry("audit_logs.actor_user_id", "n"), Map.entry("idempotency_keys.user_id", "c"));
         Map<String, String> actual = new LinkedHashMap<>();

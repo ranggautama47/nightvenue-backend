@@ -26,6 +26,7 @@ Satu-satunya tempat ADR. `APPLICATION_ARCHITECTURE.md` hanya menunjuk ke sini.
 | 018 | Kebijakan versi framework | Accepted |
 | 019 | Target hosting backend | **Proposed** (diputuskan setelah spike Phase 1) |
 | 020 | Verifikasi kepemilikan botol (QR token) | Accepted |
+| 021 | Phase 5C VOID dan SERVE | Accepted |
 
 ---
 
@@ -159,7 +160,7 @@ Minuman dibuat sebelum tagihan dibayar. Memotong stok saat pembayaran sukses mem
 - Optimistic `@Version` tetap dipakai untuk entitas jarang bentrok.
 
 ### Addendum v2.1 (ADR-003): urutan operasi
-`order_items` di-INSERT lebih dulu dalam transaksi yang sama sehingga `order_item_id` ada untuk `reference_id` ledger; kegagalan stok me-rollback seluruh transaksi termasuk order item. Baris order dikunci (`FOR UPDATE`) di awal. Pasangan (item, bahan) diurutkan menurut `ingredient_id` menaik agar satu ledger row tetap menunjuk satu item. Urutan lock global: `orders` → `payments` → `inventory_items` (ID menaik).
+`order_items` di-INSERT lebih dulu dalam transaksi yang sama sehingga `order_item_id` ada untuk `reference_id` ledger; kegagalan stok me-rollback seluruh transaksi termasuk order item. Baris order dikunci (`FOR UPDATE`) di awal. Pasangan (item, bahan) diurutkan menurut `inventory_items.id` ASC lalu `order_item_id` ASC agar satu ledger row tetap menunjuk satu item. Urutan lock global: `orders` → `payments` → `inventory_items` (ID menaik).
 
 ---
 
@@ -183,7 +184,7 @@ Stock-at-Order mengharuskan jalur pengembalian. Namun alasan Stock-at-Order adal
 Aturan:
 1. **Pengembalian dihitung dari ledger**, bukan dari recipe saat ini: baris `SALE_DEDUCT` milik item dibalik (`VOID_RETURN` dengan delta lawan). Perubahan recipe di antara order dan void tidak memengaruhi hasil.
 2. **Exactly-once**: `void_logs.order_item_id` unik, dan transisi status order memakai conditional UPDATE (`WHERE status = 'OPEN'`) sebagai gerbang sebelum stok disentuh. Request VOID kedua → 409, stok tidak berubah.
-3. VOID ditolak (409) jika order punya payment `PENDING` atau `PAID` (BR-20). Order yang sudah dibayar tidak dapat di-VOID; koreksi = refund (deferred).
+3. Payment guard for PENDING/PAID transactions: deferred to Phase 6. Not implemented in Phase 5C. Order yang sudah dibayar belum punya jalur VOID; koreksi = refund (deferred).
 4. Void di atas `venues.void_manager_approval_threshold` oleh CASHIER → 403 `MANAGER_APPROVAL_REQUIRED`; Manager/Admin yang mengeksekusi. Nilai ambang adalah konfigurasi (angka seed hanya contoh demo).
 5. Month-1 mengimplementasikan VOID **seluruh order**. Skema (`order_items.status = VOIDED`, `void_logs` per item) sudah siap untuk item-level VOID; keterbatasan ini didokumentasikan di README.
 6. Seluruh langkah dalam satu transaksi, ditutup dengan baris di `audit_logs`.
@@ -447,6 +448,26 @@ Ini bukti penguasaan label + pencocokan data, **bukan autentikasi kuat**: siapa 
 
 ### Addendum v2.1 (ADR-020): deposit exactly-once
 `bottle_vaults.source_order_item_id` UNIQUE; deposit memakai `Idempotency-Key`; produk botol wajib `quantity = 1` per order item di Month-1 (satu botol fisik = satu order item). Unit-level deposit ditunda.
+
+---
+
+## ADR-021 — Phase 5C VOID dan SERVE
+
+### Status
+Accepted.
+
+### Decision
+- Phase 5C voids the entire OPEN order; it serves one ORDERED item. SERVE allows parent status OPEN, PARTIALLY_PAID, or PAID; VOIDED and REFUNDED are rejected.
+- VOID defaults omitted disposition to RESTORED in application logic. The database has no default. SERVED items are always logged as WASTED. `approved_by` is set to the executing Manager/Admin only when subtotal is strictly above the venue threshold.
+- VOID precedence is request/header validation; order read and venue authorization; CASHIER explicit WASTED rejection; idempotency reserve/replay; order lock; OPEN status check; cashier threshold/SERVED approval check; execute.
+- Restore uses original SALE_DEDUCT ledger rows, one VOID_RETURN per row, with matching void_log reference. Missing deductions fail and roll back the transaction. Global ordering is `inventory_items.id ASC`, then `order_item_id ASC`, then ledger ID; inventory locks are acquired once per inventory ID in ascending order.
+- Partial loss of SALE_DEDUCT rows is not detectable from the current schema; only zero SALE_DEDUCT rows for an ORDERED+RESTORED item is enforced.
+- Table release skips null table IDs. A non-null table must transition OCCUPIED to AVAILABLE exactly once; zero rows is an invariant failure and rolls back VOID.
+- `ManagerApprovalRequired` maps to HTTP 403 with `MANAGER_APPROVAL_REQUIRED`. Idempotency reservation, response, and all business effects share one transaction.
+- Payment guard for PENDING/PAID transactions: deferred to Phase 6. Not implemented in Phase 5C.
+
+### Consequences
+The payment-vs-VOID race and payment state guard are Phase 6 responsibilities. PARTIALLY_PAID orders have no cancellation path until refund support exists.
 
 ---
 
