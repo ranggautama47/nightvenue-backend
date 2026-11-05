@@ -56,6 +56,13 @@ public class TableRepository {
                 """, id);
     }
 
+    public int releaseIfOccupied(long id) {
+        return jdbc.update("""
+                UPDATE venue_tables SET status = 'AVAILABLE', version = version + 1
+                WHERE id = ? AND status = 'OCCUPIED'
+                """, id);
+    }
+
     public VenueTable create(
             long venueId,
             String code,

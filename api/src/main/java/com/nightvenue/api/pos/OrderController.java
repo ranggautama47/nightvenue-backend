@@ -23,9 +23,11 @@ import java.util.UUID;
 @RequestMapping("/api/v1/orders")
 public class OrderController {
     private final OrderService orders;
+    private final OrderLifecycleService lifecycle;
 
-    public OrderController(OrderService orders) {
+    public OrderController(OrderService orders, OrderLifecycleService lifecycle) {
         this.orders = orders;
+        this.lifecycle = lifecycle;
     }
 
     @PostMapping
@@ -53,5 +55,24 @@ public class OrderController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public OrderRepository.Order get(@PathVariable @Positive long id) {
         return orders.get(id);
+    }
+
+    @PostMapping("/{id}/void")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    public VoidedOrderWithItems voidOrder(
+            @PathVariable @Positive long id,
+            @Valid @RequestBody OrderVoidRequest request,
+            @RequestHeader("Idempotency-Key") UUID idempotencyKey,
+            @AuthenticationPrincipal Jwt jwt) {
+        return lifecycle.voidOrder(id, request, idempotencyKey, jwt.getSubject(), jwt.getClaimAsString("role"));
+    }
+
+    @PostMapping("/{id}/items/{itemId}/serve")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    public OrderWithItems serve(
+            @PathVariable @Positive long id,
+            @PathVariable @Positive long itemId,
+            @AuthenticationPrincipal Jwt jwt) {
+        return lifecycle.serve(id, itemId, jwt.getSubject());
     }
 }
