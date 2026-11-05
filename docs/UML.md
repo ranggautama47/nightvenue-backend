@@ -259,7 +259,7 @@ classDiagram
 
 ## 4. Sequence
 
-### 4.1 Buat order — IMPLEMENTED (Phase 5A); tambah item — PLANNED (Stock-at-Order)
+### 4.1 Buat order — IMPLEMENTED (Phase 5A); tambah item — IMPLEMENTED (Stock-at-Order)
 
 ```mermaid
 sequenceDiagram
@@ -381,27 +381,23 @@ sequenceDiagram
 
     K->>V: POST /api/v1/orders/id/void (alasan, disposition, Idempotency-Key)
     V->>V: cek ambang dan peran (WASTED hanya Manager/Admin)
-    V->>D: ada payment PENDING atau PAID?
-    alt ada
-        V-->>K: 409 ORDER_HAS_PAYMENTS
-    else tidak ada
-        V->>D: BEGIN
-        V->>D: UPDATE orders SET VOIDED WHERE status = OPEN
-        alt rows = 0
-            V->>D: ROLLBACK
-            V-->>K: 409 sudah void
-        else rows = 1
-            loop tiap item aktif
-                V->>D: INSERT void_logs (UQ order_item_id)
-                V->>D: item VOIDED
-                opt RESTORED
-                    V->>D: balik baris ledger SALE_DEDUCT, VOID_RETURN
-                end
+    Note over V,D: Payment guard for PENDING/PAID transactions: deferred to Phase 6. Not implemented in Phase 5C.
+    V->>D: BEGIN
+    V->>D: UPDATE orders SET VOIDED WHERE status = OPEN
+    alt rows = 0
+        V->>D: ROLLBACK
+        V-->>K: 409 sudah void
+    else rows = 1
+        loop tiap item aktif
+            V->>D: INSERT void_logs (UQ order_item_id)
+            V->>D: item VOIDED
+            opt RESTORED
+                V->>D: balik baris ledger SALE_DEDUCT, VOID_RETURN
             end
-            V->>D: audit ORDER_VOID
-            V->>D: COMMIT
-            V-->>K: 200
         end
+        V->>D: audit ORDER_VOID
+        V->>D: COMMIT
+        V-->>K: 200
     end
 ```
 
@@ -550,7 +546,7 @@ stateDiagram-v2
     OPEN --> PARTIALLY_PAID : payment PAID sebagian
     OPEN --> PAID : lunas dan minimum spend terpenuhi
     PARTIALLY_PAID --> PAID : sisa lunas
-    OPEN --> VOIDED : VOID (tanpa payment PENDING atau PAID)
+    OPEN --> VOIDED : VOID (payment guard deferred to Phase 6)
     PAID --> REFUNDED : dicadangkan, deferred
     VOIDED --> [*]
     PAID --> [*]

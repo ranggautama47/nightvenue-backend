@@ -226,7 +226,7 @@ Acceptance dalam bentuk ringkas Given/When/Then. Semua FR berikut adalah Month-1
 |---|---|---|
 | FR-POS-01 | Buka order (meja opsional, customer opsional); snapshot minimum spend saat meja dipilih | Meja sudah punya order aktif → 409 |
 | FR-POS-02 | Tambah item → potong stok sesuai recipe, `Idempotency-Key` | Gagal sebagian → rollback semua; request sama 2× → satu efek |
-| FR-POS-03 | Tandai item disajikan | Item `ORDERED → SERVED`; tidak bisa mundur |
+| FR-POS-03 | Tandai item disajikan | Item `ORDERED → SERVED`; tidak bisa mundur. Parent order yang diizinkan: `OPEN`, `PARTIALLY_PAID`, `PAID`; ditolak: `VOIDED`, `REFUNDED`. |
 | FR-POS-04 | Hitung subtotal, diskon, service, pajak | Pembulatan konsisten, diuji unit |
 | FR-POS-05 | Validasi minimum spend saat tutup | Subtotal < minimum → tidak bisa `PAID`, pesan menyebut selisih |
 | FR-POS-06 | Order menerima `business_date` | Lihat FR-BD |
@@ -237,7 +237,7 @@ Acceptance dalam bentuk ringkas Given/When/Then. Semua FR berikut adalah Month-1
 | FR-VOID-01 | `POST /api/v1/orders/{id}/void` dengan alasan + disposition | Item `ORDERED`+RESTORED: stok kembali sesuai ledger; item `SERVED`: tidak kembali |
 | FR-VOID-02 | Exactly-once | Request VOID kedua → 409; stok tidak berubah (test) |
 | FR-VOID-03 | Ambang manager | CASHIER di atas ambang → 403 `MANAGER_APPROVAL_REQUIRED` |
-| FR-VOID-04 | Ditolak bila ada payment PENDING/PAID | 409 dengan pesan yang jelas |
+| FR-VOID-04 | Ditolak bila ada payment PENDING/PAID | 409 dengan pesan yang jelas. Payment guard for PENDING/PAID transactions: deferred to Phase 6. Not implemented in Phase 5C. |
 | FR-VOID-05 | `void_logs` per item + `audit_logs` | Catatan alasan, pelaku, disposition, nilai |
 | FR-VOID-06 | Perubahan recipe setelah order tidak memengaruhi pengembalian | Test: ubah recipe, void, stok kembali sebesar yang dipotong |
 
@@ -341,7 +341,7 @@ Backend: JUnit 5, Mockito, Spring Boot Test, Testcontainers (PostgreSQL dan Redi
 13. batas Business Day (05:59:59 / 06:00:00, timezone)
 14. shift melewati cutoff → `MANAGER_REVIEW`, payment ditolak
 15. variance shift dan catatan wajib
-16. VOID ditolak saat payment PENDING
+16. VOID saat payment PENDING — payment guard deferred to Phase 6; not implemented in Phase 5C
 17. chat: FastAPI mati → fallback
 18. chat: key tidak ada di log/DB/respons
 19. chat: `OUT_OF_SCOPE` tanpa panggilan LLM

@@ -87,13 +87,17 @@ Pemetaan minggu (target): M1 = Fase 0–2 (+ awal 3); M2 = Fase 3–5; M3 = Fase
 - [ ] Conditional UPDATE; urutan ID asc; rollback penuh saat stok kurang
 - [ ] **Bukti A**: uji konkurensi (N thread, stok terbatas) → stok negatif = 0, jumlah sukses = stok awal / kebutuhan; hasil dilampirkan
 - [ ] Idempotency-Key wajib pada buka order (ORDER_OPEN), tambah item, dan VOID; add-item mengunci baris order dan `order_item` dibuat sebelum ledger
-- [ ] VOID: RESTORED vs WASTED, ledger-based, exactly-once (UQ + conditional update), ditolak bila ada payment PENDING/PAID
+- [ ] VOID whole order: RESTORED vs WASTED, ledger-based exactly-once; SERVE one ORDERED item only for OPEN/PARTIALLY_PAID/PAID parents
+- [ ] VOID idempotency, manager approval precedence, audit, table release and full rollback invariants
+- [ ] Payment guard for PENDING/PAID transactions: deferred to Phase 6. Not implemented in Phase 5C.
 - [ ] Ambang approval Manager dan batasan WASTED diuji
 - [ ] Owner dapat menjelaskan alur potong-stok dan kompensasi
 
 ### Fase 6 — Pembayaran
 **FR**: PAY-01..08. **Kritis.**
 **DoD**
+- [ ] BR-20 rejects VOID when payment is PENDING/PAID; payment-vs-VOID race test; lock order `orders` → `payments` → `inventory_items`
+- [ ] Payment guard for PENDING/PAID transactions: deferred to Phase 6. Not implemented in Phase 5C.
 - [ ] CASH, CARD_EDC, QRIS Sandbox; Order 1:N Payment; split nominal
 - [ ] Pembuatan payment diserialkan lewat lock baris order; uji konkurensi: dua payment paralel (key berbeda) tidak melampaui tagihan (FR-PAY-09)
 - [ ] QRIS memakai pola TX1 → panggilan Midtrans di luar lock → TX2; job penyapu `PENDING` tanpa referensi provider

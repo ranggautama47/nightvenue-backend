@@ -88,6 +88,87 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/RateLimited" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /orders/{orderId}/void:
+    post:
+      summary: Void an entire open order
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema: { type: integer, format: int64 }
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 255 }
+                disposition: { type: string, enum: [RESTORED, WASTED] }
+      responses:
+        "200":
+          description: Voided order snapshot with effective item dispositions
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoidedOrder" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Manager approval required (ManagerApprovalRequired) or role not permitted
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Order cannot be voided in its current state (Conflict)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: Idempotency-Key reused with a different payload (BusinessRuleViolation)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /orders/{orderId}/items/{itemId}/serve:
+    post:
+      summary: Mark an ordered item served
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema: { type: integer, format: int64 }
+        - in: path
+          name: itemId
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Updated order with items
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderWithItems" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Role not permitted
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Order or item cannot be served in its current state (Conflict)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
 components:
   securitySchemes:
     bearerAuth:
@@ -122,6 +203,87 @@ components:
         status: { type: integer }
         detail: { type: string }
         traceId: { type: string }
+    OrderItem:
+      type: object
+      required: [id, orderId, productId, itemType, productNameSnapshot, unitPriceSnapshot, quantity, lineTotal, status, createdAt, updatedAt]
+      properties:
+        id: { type: integer, format: int64 }
+        orderId: { type: integer, format: int64 }
+        productId: { type: integer, format: int64 }
+        itemType: { type: string, enum: [PRODUCT, BOTTLE_REDEMPTION] }
+        productNameSnapshot: { type: string }
+        unitPriceSnapshot: { type: integer, format: int64 }
+        quantity: { type: integer }
+        lineTotal: { type: integer, format: int64 }
+        status: { type: string, enum: [ORDERED, SERVED, VOIDED] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    OrderWithItems:
+      type: object
+      required: [id, venueId, orderNumber, cashierId, businessDate, status, subtotal, discountAmount, serviceChargeAmount, taxAmount, totalDue, paidTotal, minimumSpendSnapshot, openedAt, version, items]
+      properties:
+        id: { type: integer, format: int64 }
+        venueId: { type: integer, format: int64 }
+        orderNumber: { type: string }
+        tableId: { type: [integer, "null"], format: int64 }
+        customerId: { type: [integer, "null"], format: int64 }
+        cashierId: { type: integer, format: int64 }
+        businessDate: { type: string, format: date }
+        status: { type: string, enum: [OPEN, PARTIALLY_PAID, PAID, VOIDED, REFUNDED] }
+        subtotal: { type: integer, format: int64 }
+        discountAmount: { type: integer, format: int64 }
+        serviceChargeAmount: { type: integer, format: int64 }
+        taxAmount: { type: integer, format: int64 }
+        totalDue: { type: integer, format: int64 }
+        paidTotal: { type: integer, format: int64 }
+        minimumSpendSnapshot: { type: integer, format: int64 }
+        openedAt: { type: string, format: date-time }
+        closedAt: { type: [string, "null"], format: date-time }
+        version: { type: integer, format: int64 }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/OrderItem" }
+    VoidedItem:
+      type: object
+      required: [id, orderId, productId, itemType, productNameSnapshot, unitPriceSnapshot, quantity, lineTotal, status, createdAt, updatedAt, disposition]
+      properties:
+        id: { type: integer, format: int64 }
+        orderId: { type: integer, format: int64 }
+        productId: { type: integer, format: int64 }
+        itemType: { type: string, enum: [PRODUCT, BOTTLE_REDEMPTION] }
+        productNameSnapshot: { type: string }
+        unitPriceSnapshot: { type: integer, format: int64 }
+        quantity: { type: integer }
+        lineTotal: { type: integer, format: int64 }
+        status: { type: string, enum: [ORDERED, SERVED, VOIDED] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        disposition: { type: string, enum: [RESTORED, WASTED] }
+    VoidedOrder:
+      type: object
+      required: [id, venueId, orderNumber, cashierId, businessDate, status, subtotal, discountAmount, serviceChargeAmount, taxAmount, totalDue, paidTotal, minimumSpendSnapshot, openedAt, version, items]
+      properties:
+        id: { type: integer, format: int64 }
+        venueId: { type: integer, format: int64 }
+        orderNumber: { type: string }
+        tableId: { type: [integer, "null"], format: int64 }
+        customerId: { type: [integer, "null"], format: int64 }
+        cashierId: { type: integer, format: int64 }
+        businessDate: { type: string, format: date }
+        status: { type: string, enum: [OPEN, PARTIALLY_PAID, PAID, VOIDED, REFUNDED] }
+        subtotal: { type: integer, format: int64 }
+        discountAmount: { type: integer, format: int64 }
+        serviceChargeAmount: { type: integer, format: int64 }
+        taxAmount: { type: integer, format: int64 }
+        totalDue: { type: integer, format: int64 }
+        paidTotal: { type: integer, format: int64 }
+        minimumSpendSnapshot: { type: integer, format: int64 }
+        openedAt: { type: string, format: date-time }
+        closedAt: { type: [string, "null"], format: date-time }
+        version: { type: integer, format: int64 }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/VoidedItem" }
   responses:
     BadRequest:
       description: Invalid JSON, missing field, or password over 72 UTF-8 bytes
@@ -130,6 +292,11 @@ components:
           schema: { $ref: "#/components/schemas/Problem" }
     Unauthorized:
       description: Invalid credentials or bearer token
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: Resource not found
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }

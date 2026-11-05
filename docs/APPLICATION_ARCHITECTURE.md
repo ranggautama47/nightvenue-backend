@@ -69,7 +69,7 @@ nightvenue-backend/
 │   ├── venue/        IMPLEMENTED (Phase 4D): table CRUD (`TableController`, `TableService`, `TableRepository`)
 │   ├── catalog/       product, category, ingredient, recipe
 │   ├── inventory/     inventory, ledger, adjustment
-│   ├── pos/           IMPLEMENTED (Phase 5A): order endpoints and persistence (`OrderController`, `OrderService`, `OrderRepository`)
+│   ├── pos/           IMPLEMENTED (Phase 5A–5C): order, VOID and SERVE endpoints/services/repositories
 │   ├── payment/       payment, PaymentGateway, webhook
 │   ├── bottle/        vault, redeem, expiry job
 │   ├── shift/         cashier shift, cutoff job
@@ -271,18 +271,13 @@ Bila order sudah `VOIDED` saat settlement tiba: payment dicatat `PAID`, order te
 Satu transaksi:
 
 ```text
-1. Cek Idempotency-Key dan otorisasi (ambang manager, disposition WASTED hanya Manager/Admin)
-2. Tolak 409 bila order punya payment PENDING atau PAID
-3. UPDATE orders SET status = 'VOIDED' WHERE id = :id AND status = 'OPEN'
-     rows = 0 -> 409 (sudah void / state salah); selesai tanpa menyentuh stok
-4. Untuk tiap item aktif (ORDERED/SERVED):
-     disposition = RESTORED hanya bila item ORDERED dan diminta RESTORED; selain itu WASTED
-     INSERT void_logs (UQ order_item_id menjamin sekali)
-     UPDATE order_items SET status = 'VOIDED'
-     bila RESTORED: untuk tiap baris SALE_DEDUCT milik item (urut inventory_item_id ASC):
-         UPDATE inventory_items SET quantity = quantity + :delta_asli
-         INSERT inventory_transactions (VOID_RETURN, reference VOID_LOG, business_date)
-5. INSERT audit_logs ORDER_VOID
+1. Validate body/key; read order and authorize venue before any replay path.
+2. Reject explicit CASHIER WASTED; reserve/replay idempotency; lock order; reject non-OPEN status; enforce cashier threshold/SERVED approval.
+3. Conditionally transition OPEN → VOIDED and capture one batch UUID. Write all per-item `void_logs` first, with SERVED items effectively WASTED.
+4. Transition all ORDERED/SERVED items to VOIDED. For RESTORED ORDERED items, batch-read SALE_DEDUCT rows ordered by `inventory_items.id`, `order_item_id`, then ledger ID; lock each inventory row once and append one matching VOID_RETURN per deduction.
+5. Write ORDER_VOID audit; conditionally release an occupied table (zero rows is invariant failure); serialize and complete the idempotency response.
+
+The VOID transaction uses one captured instant, preserves financial snapshots, and has no payment guard in Phase 5C; the PENDING/PAID guard is deferred to Phase 6. SERVE locks the parent order first, allows OPEN/PARTIALLY_PAID/PAID, and conditionally transitions one ORDERED item to SERVED.
 ```
 
 Pengembalian dibaca dari ledger, bukan dari recipe saat ini (ADR-004).

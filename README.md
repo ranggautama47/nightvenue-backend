@@ -8,7 +8,7 @@ Backend for **NightVenue**, a fictional nightlife venue operations platform (POS
 |---|---|
 | Phase 1 foundation (skeleton, Docker Compose, CI) | Complete |
 | Phase 2 database, business date, demo seed | Implemented |
-| Business features (orders, payments, inventory, ...) | Not implemented yet |
+| Business features (orders, payments, inventory, ...) | Order open/add items and whole-order VOID/per-item SERVE implemented; payment guard deferred |
 | Performance and ML metrics | None published. Numbers will appear only after they are measured |
 | Hosting | Not decided (ADR-019 is *Proposed*) |
 
@@ -60,6 +60,8 @@ Requires Docker Desktop (engine running).
 Stop with `docker compose down`.
 
 ## Tests
+
+Phase 5C supports whole-order VOID only; item-level VOID is deferred. PARTIALLY_PAID orders have no cancellation path until refund support exists. Payment guard for PENDING/PAID transactions: deferred to Phase 6. Not implemented in Phase 5C.
 
 Java (needs a JDK from `CONTEXT.md` and a running Docker engine, because Testcontainers starts PostgreSQL and Redis):
 
