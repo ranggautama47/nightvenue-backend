@@ -41,7 +41,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class Phase2DatabaseTests {
     private static final List<String> SEED_TABLES = List.of("venues", "users", "user_venues", "customers",
             "product_categories", "products", "ingredients", "recipes", "recipe_items", "stock_locations",
-            "inventory_items", "inventory_transactions", "venue_tables", "audit_logs", "idempotency_keys");
+            "inventory_items", "inventory_transactions", "venue_tables", "audit_logs", "idempotency_keys",
+            "orders", "order_items", "void_logs", "payments", "payment_events", "cashier_shifts");
 
     @Autowired JdbcTemplate jdbc;
     @Autowired Flyway flyway;
@@ -54,9 +55,6 @@ class Phase2DatabaseTests {
     void migrationsValidateAndCreatePhaseFiveATables() {
         flyway.validate();
         List<String> expected = new java.util.ArrayList<>(SEED_TABLES);
-        expected.add("orders");
-        expected.add("order_items");
-        expected.add("void_logs");
         expected.add("flyway_schema_history");
         List<String> actual = jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name", String.class);
         assertEquals(expected.stream().sorted().toList(), actual);
@@ -80,7 +78,11 @@ class Phase2DatabaseTests {
                 Map.entry("void_logs.order_item_id", "r"), Map.entry("void_logs.voided_by", "r"),
                 Map.entry("void_logs.approved_by", "r"),
                 Map.entry("audit_logs.venue_id", "n"),
-                Map.entry("audit_logs.actor_user_id", "n"), Map.entry("idempotency_keys.user_id", "c"));
+                Map.entry("audit_logs.actor_user_id", "n"), Map.entry("idempotency_keys.user_id", "c"),
+                Map.entry("payments.order_id", "r"), Map.entry("payments.venue_id", "r"),
+                Map.entry("payments.shift_id", "r"), Map.entry("payments.created_by", "r"),
+                Map.entry("payment_events.payment_id", "r"),
+                Map.entry("cashier_shifts.venue_id", "r"), Map.entry("cashier_shifts.cashier_id", "r"));
         Map<String, String> actual = new LinkedHashMap<>();
         jdbc.query("""
                 SELECT child.relname || '.' || child_col.attname AS fk_column, c.confdeltype::text AS delete_action
@@ -91,8 +93,7 @@ class Phase2DatabaseTests {
                 WHERE c.contype='f' AND child.relnamespace='public'::regnamespace
                 """, (org.springframework.jdbc.core.RowCallbackHandler) rs -> actual.put(rs.getString("fk_column"), rs.getString("delete_action")));
         assertEquals(expected, actual);
-        assertTrue(actual.keySet().stream().noneMatch(key -> key.startsWith("payments.")
-                || key.startsWith("bottle_vaults.") || key.startsWith("cashier_shifts.")));
+        assertFalse(actual.keySet().stream().anyMatch(key -> key.startsWith("bottle_vaults.")));
     }
 
     @Test

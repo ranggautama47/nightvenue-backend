@@ -32,10 +32,9 @@ Pendamping: `PRD.md` (BR-xx), `DECISIONS.md` (alasan), `UML.md` (state machine),
 |---|---|
 | 2 | `venues`, `users`, `user_venues`, `customers`, `product_categories`, `products`, `ingredients`, `recipes`, `recipe_items`, `stock_locations`, `inventory_items`, `inventory_transactions`, `venue_tables`, `audit_logs`, `idempotency_keys` |
 | 5 | `orders`, `order_items` |
-| 6 | `payments`, `payment_events` |
 | 5 | `void_logs` |
+| 6 | `payments`, `payment_events`, `cashier_shifts` |
 | 7 | `bottle_vaults`, `bottle_vault_transactions` |
-| 8 | `cashier_shifts` (+ migrasi menambah `payments.shift_id` dan FK-nya) |
 | 9 | `stock_forecasts` |
 | 10 | `venue_faqs`, `promotions`, `chat_route_logs` |
 
@@ -190,7 +189,7 @@ Detail void (alasan, pelaku, disposition) ada di `void_logs`, tidak diduplikasi 
 | order_id | BIGINT | FK NN (Order → Payment = 1:N, ADR-005) |
 | venue_id | BIGINT | FK NN (disalin dari order; untuk index per venue-malam) |
 | business_date | DATE | NN (saat payment dibuat) |
-| shift_id | BIGINT | FK→cashier_shifts nullable (ditambahkan Fase 8). Wajib terisi untuk `method = CASH` (divalidasi aplikasi; semua role) |
+| shift_id | BIGINT | FK→cashier_shifts nullable (ditambahkan Fase 6). Wajib terisi untuk `method = CASH` (divalidasi aplikasi; semua role) |
 | method | VARCHAR(20) | NN CK `CASH, CARD_EDC, QRIS_MIDTRANS` |
 | amount | BIGINT | NN CK > 0; ≤ `total_due − SUM(PAID) − SUM(PENDING)`, divalidasi di bawah lock baris order (ADR-005, BR-28) |
 | status | VARCHAR(12) | NN CK `PENDING, PAID, FAILED, EXPIRED, CANCELLED, REFUNDED` (`REFUNDED` dicadangkan) |
@@ -207,12 +206,11 @@ Detail void (alasan, pelaku, disposition) ada di `void_logs`, tidak diduplikasi 
 | Kolom | Tipe | Catatan |
 |---|---|---|
 | id | BIGINT | PK |
-| payment_id | BIGINT | FK nullable (event untuk order tak dikenal tetap tercatat) |
+| payment_id | BIGINT | FK NN (ON DELETE RESTRICT) |
 | provider | VARCHAR(20) | NN |
 | event_key | VARCHAR(160) | NN, **UQ `(provider, event_key)`**; `transaction_id:transaction_status:status_code` |
-| signature_valid | BOOLEAN | NN |
 | result | VARCHAR(15) | NN CK `PROCESSED, IGNORED_STALE, REJECTED` (`REJECTED` = signature valid tetapi gagal verifikasi Status API / nominal tidak cocok) |
-| raw_payload | JSONB | NN (tanpa secret) |
+| payload_snapshot | JSONB | NN. Snapshot tersanitasi berbasis allowlist, bukan payload mentah; tanpa secret, signature, atau header |
 | received_at | TIMESTAMPTZ | NN |
 
 Catatan: `payment_events` adalah **satu record kanonik per `event_key`** (hasil dedup), bukan log setiap pengiriman jaringan. Pengiriman duplikat memakai `INSERT ... ON CONFLICT DO NOTHING`; 0 baris = no-op yang dicatat di log terstruktur (tanpa baris kedua dan tanpa tabel receipt di Month-1). Signature tidak valid tidak membuat baris; cukup `audit_logs` `WEBHOOK_REJECTED`.
@@ -284,18 +282,13 @@ CK: `remaining_volume_ml >= 0 AND remaining_volume_ml <= original_volume_ml` (BR
 | status | VARCHAR(15) | NN CK `OPEN, SUBMITTED, MANAGER_REVIEW, RECONCILED` |
 | opening_float | BIGINT | NN CK ≥ 0 |
 | opened_at | TIMESTAMPTZ | NN |
-| submitted_at | TIMESTAMPTZ | |
 | forced_review_at | TIMESTAMPTZ | diisi saat cutoff memaksa `MANAGER_REVIEW` |
-| expected_cash | BIGINT | snapshot saat submit / review |
-| actual_cash | BIGINT | CK ≥ 0 |
-| variance | BIGINT | `actual_cash − expected_cash` |
-| reviewed_by | BIGINT | FK→users |
-| reviewed_at | TIMESTAMPTZ | |
-| review_note | VARCHAR(500) | wajib bila variance ≠ 0 atau `forced_review_at` terisi (validasi aplikasi) |
 | version | BIGINT | NN |
+| created_at, updated_at | TIMESTAMPTZ | NN |
 
-CK: `status <> 'RECONCILED' OR (reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL AND actual_cash IS NOT NULL)`.
-Partial UQ: `UNIQUE (cashier_id) WHERE status = 'OPEN'`.
+**Foundation Phase 6:** status vocabulary mencakup `OPEN`, `SUBMITTED`, `MANAGER_REVIEW`, `RECONCILED`; Phase 6 mengoperasikan pembukaan shift dan stale `OPEN → MANAGER_REVIEW` saja. `opening_float >= 0`. `status = 'MANAGER_REVIEW'` mensyaratkan `forced_review_at IS NOT NULL`. Foreign key `venue_id` dan `cashier_id` memakai `ON DELETE RESTRICT`. Partial UQ: `UNIQUE (cashier_id) WHERE status = 'OPEN'`.
+
+**Extension Phase 8 — reconciliation:** kolom `submitted_at`, `expected_cash`, `actual_cash`, `variance`, `reviewed_by`, `reviewed_at`, dan `review_note`, termasuk constraint `status <> 'RECONCILED' OR (reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL AND actual_cash IS NOT NULL)`, ditambahkan saat Phase 8. Phase 6 tidak menyediakan submit, reconciliation, variance, atau manager-review workflow. Aksi stale shift pada Phase 6 hanya mencatat `forced_review_at`; proses resolusi manager tetap Phase 8.
 
 ### 4.9 ML dan Chat
 
@@ -358,7 +351,7 @@ CREATE UNIQUE INDEX uq_orders_active_table ON orders (table_id)
 ALTER TABLE void_logs ADD CONSTRAINT uq_void_once_per_item UNIQUE (order_item_id);
 
 -- Webhook idempotent (BR-13)
-ALTER TABLE payment_events ADD CONSTRAINT uq_payment_events_key UNIQUE (provider, event_key);
+ALTER TABLE payment_events ADD CONSTRAINT uq_payment_events_provider_event UNIQUE (provider, event_key);
 
 -- Invarian volume botol (BR-09)
 ALTER TABLE bottle_vaults ADD CONSTRAINT ck_vault_volume
@@ -368,7 +361,7 @@ ALTER TABLE bottle_vaults ADD CONSTRAINT ck_vault_volume
 ALTER TABLE bottle_vaults ADD CONSTRAINT uq_vault_source_item UNIQUE (source_order_item_id);
 
 -- Satu shift OPEN per cashier (BR-22)
-CREATE UNIQUE INDEX uq_one_open_shift_per_cashier ON cashier_shifts (cashier_id) WHERE status = 'OPEN';
+CREATE UNIQUE INDEX uq_cashier_shifts_one_open_per_cashier ON cashier_shifts (cashier_id) WHERE status = 'OPEN';
 
 -- Idempotency-Key
 ALTER TABLE idempotency_keys ADD CONSTRAINT uq_idem UNIQUE (scope, user_id, key);
@@ -419,9 +412,9 @@ ALTER TABLE idempotency_keys ADD CONSTRAINT uq_idem UNIQUE (scope, user_id, key)
 | 21 | order_items.product_id | products.id | N:1 | RESTRICT | |
 | 22 | payments.order_id | orders.id | N:1 | RESTRICT | Order 1:N Payment |
 | 23 | payments.venue_id | venues.id | N:1 | RESTRICT | |
-| 24 | payments.shift_id | cashier_shifts.id | N:0..1 | RESTRICT | Ditambahkan Fase 8 |
+| 24 | payments.shift_id | cashier_shifts.id | N:0..1 | RESTRICT | Ditambahkan Fase 6 |
 | 25 | payments.created_by | users.id | N:1 | RESTRICT | |
-| 26 | payment_events.payment_id | payments.id | N:0..1 | SET NULL | Event tetap tercatat |
+| 26 | payment_events.payment_id | payments.id | N:1 | RESTRICT | Event tetap tercatat |
 | 27 | void_logs.venue_id | venues.id | N:1 | RESTRICT | |
 | 28 | void_logs.order_id | orders.id | N:1 | RESTRICT | |
 | 29 | void_logs.order_item_id | order_items.id | 1:1 | RESTRICT | UQ |
@@ -429,8 +422,7 @@ ALTER TABLE idempotency_keys ADD CONSTRAINT uq_idem UNIQUE (scope, user_id, key)
 | 31 | void_logs.approved_by | users.id | N:0..1 | RESTRICT | |
 | 32 | cashier_shifts.venue_id | venues.id | N:1 | RESTRICT | |
 | 33 | cashier_shifts.cashier_id | users.id | N:1 | RESTRICT | |
-| 34 | cashier_shifts.reviewed_by | users.id | N:0..1 | RESTRICT | |
-| 35 | bottle_vaults.venue_id | venues.id | N:1 | RESTRICT | |
+| 34 | bottle_vaults.venue_id | venues.id | N:1 | RESTRICT | |
 | 36 | bottle_vaults.customer_id | customers.id | N:1 | RESTRICT | |
 | 37 | bottle_vaults.product_id | products.id | N:1 | RESTRICT | |
 | 38 | bottle_vaults.source_order_item_id | order_items.id | 1:0..1 | SET NULL | UQ (deposit exactly-once) |
@@ -491,7 +483,7 @@ erDiagram
     ORDERS ||--o{ PAYMENTS : "dibayar oleh"
     CASHIER_SHIFTS |o--o{ PAYMENTS : "kas shift"
     USERS ||--o{ CASHIER_SHIFTS : "kasir"
-    PAYMENTS |o--o{ PAYMENT_EVENTS : "webhook log"
+    PAYMENTS ||--o{ PAYMENT_EVENTS : "webhook log"
 
     ORDERS ||--o{ VOID_LOGS : "void"
     ORDER_ITEMS ||--o| VOID_LOGS : "di-void sekali"
@@ -538,5 +530,5 @@ Riwayat order/payment sintetis bersifat opsional (Fase 11, hanya bila dibutuhkan
 2. Setiap migration baru diuji dengan menjalankan seluruh rantai dari DB kosong di Testcontainers.
 3. Constraint dan index kritis di bagian 6 **wajib** ada di migration, bukan hanya di kode.
 4. Tidak ada `DROP` data tanpa persetujuan PM.
-5. Migration dipecah per fase sesuai bagian 2; `payments.shift_id` ditambahkan oleh migrasi Fase 8 karena `cashier_shifts` dibuat di sana.
+5. Migration dipecah per fase sesuai bagian 2; `payments.shift_id` ditambahkan oleh migrasi Fase 6 karena `cashier_shifts` dibuat di sana.
 6. Agent yang membuat migration melaporkan nama file di laporan PR. Seeder berjalan dua kali tanpa duplikat.
