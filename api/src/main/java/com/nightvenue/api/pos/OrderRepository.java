@@ -185,6 +185,21 @@ public class OrderRepository {
                 subtotal, serviceChargeAmount, taxAmount, totalDue, Timestamp.from(updatedAt), id);
     }
 
+    /**
+     * Payment settlement (M2, additive). CALLER MUST HOLD the order row lock and
+     * must require exactly one affected row. closedAt is set only when the order
+     * becomes PAID; partial payments keep closed_at null.
+     */
+    public int updatePaidTotalAndStatus(long id, long paidTotal, String status,
+                                        Instant closedAt, Instant updatedAt) {
+        return jdbc.update("""
+                UPDATE orders
+                SET paid_total = ?, status = ?, closed_at = ?, updated_at = ?, version = version + 1
+                WHERE id = ? AND status IN ('OPEN', 'PARTIALLY_PAID')
+                """, paidTotal, status, closedAt == null ? null : Timestamp.from(closedAt),
+                Timestamp.from(updatedAt), id);
+    }
+
     private static Order mapOrder(java.sql.ResultSet rs, int row) throws java.sql.SQLException {
         Timestamp closedAt = rs.getTimestamp("closed_at");
         return new Order(

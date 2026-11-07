@@ -33,6 +33,51 @@ public class ShiftRepository {
                 .stream().findFirst();
     }
 
+    /**
+     * Payment-path lock. FOR SHARE (not FOR UPDATE) lets concurrent CASH payments
+     * validate the same shift, while a concurrent stale-shift flip on this row
+     * must wait for the payment transaction to commit.
+     */
+    public Optional<CashierShift> findOpenShiftForPayment(long cashierId) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM cashier_shifts WHERE cashier_id = ? AND status = 'OPEN' FOR SHARE",
+                        ShiftRepository::map, cashierId)
+                .stream().findFirst();
+    }
+
+    /**
+     * Conditional stale-shift flip (OD-2). Compares the shift against the current
+     * business date of its OWN venue, not the venue requested for a new shift.
+     */
+    public int markStaleShiftForReview(long shiftId, long cashierId,
+                                       LocalDate ownVenueCurrentBusinessDate, Instant forcedReviewAt) {
+        Timestamp timestamp = Timestamp.from(forcedReviewAt);
+        return jdbc.update("""
+                UPDATE cashier_shifts
+                SET status = 'MANAGER_REVIEW', forced_review_at = ?, updated_at = ?, version = version + 1
+                WHERE id = ? AND cashier_id = ? AND status = 'OPEN' AND business_date < ?
+                """, timestamp, timestamp, shiftId, cashierId, java.sql.Date.valueOf(ownVenueCurrentBusinessDate));
+    }
+
+    /**
+     * Atomic insert guarded by the V8 partial unique index
+     * uq_cashier_shifts_one_open_per_cashier. Empty result means another OPEN
+     * shift already exists for the cashier.
+     */
+    public Optional<CashierShift> insertOpenShiftIfAbsent(long venueId, long cashierId, LocalDate businessDate,
+                                                          long openingFloat, Instant openedAt) {
+        Timestamp timestamp = Timestamp.from(openedAt);
+        return jdbc.query("""
+                        INSERT INTO cashier_shifts (
+                            venue_id, cashier_id, business_date, status, opening_float, opened_at,
+                            version, created_at, updated_at
+                        ) VALUES (?, ?, ?, 'OPEN', ?, ?, 0, ?, ?)
+                        ON CONFLICT (cashier_id) WHERE status = 'OPEN' DO NOTHING
+                        RETURNING %s
+                        """.formatted(COLUMNS), ShiftRepository::map, venueId, cashierId,
+                java.sql.Date.valueOf(businessDate), openingFloat, timestamp, timestamp, timestamp)
+                .stream().findFirst();
+    }
+
     public CashierShift insertOpenShift(long venueId, long cashierId, LocalDate businessDate,
                                         long openingFloat, Instant openedAt) {
         Timestamp timestamp = Timestamp.from(openedAt);

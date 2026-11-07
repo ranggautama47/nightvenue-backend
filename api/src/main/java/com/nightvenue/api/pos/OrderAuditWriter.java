@@ -6,6 +6,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Map;
 
 @Service
@@ -26,6 +27,24 @@ public class OrderAuditWriter {
 
     public void serve(long venueId, long actorId, long itemId, Instant now) {
         write(venueId, actorId, "ORDER_ITEM_SERVE", "ORDER_ITEM", itemId, Map.of(), now);
+    }
+
+    public void paymentCreated(long venueId, long actorId, long paymentId, long orderId,
+                               String method, long amount, Long shiftId, Instant now) {
+        Map<String, Object> details = new java.util.LinkedHashMap<>();
+        details.put("order_id", orderId);
+        details.put("method", method);
+        details.put("amount", amount);
+        if (shiftId != null) details.put("shift_id", shiftId);
+        write(venueId, actorId, "PAYMENT_CREATED", "PAYMENT", paymentId, details, now);
+    }
+
+    public void shiftOpened(long venueId, long actorId, long shiftId, LocalDate businessDate, Instant now) {
+        write(venueId, actorId, "SHIFT_OPENED", "CASHIER_SHIFT", shiftId, Map.of("business_date", businessDate.toString()), now);
+    }
+
+    public void shiftForcedReview(long venueId, long actorId, long shiftId, LocalDate businessDate, Instant now) {
+        write(venueId, actorId, "SHIFT_FORCED_REVIEW", "CASHIER_SHIFT", shiftId, Map.of("business_date", businessDate.toString()), now);
     }
 
     private void write(long venueId, long actorId, String action, String entityType, long entityId,
