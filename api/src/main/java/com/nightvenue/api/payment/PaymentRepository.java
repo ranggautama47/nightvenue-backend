@@ -25,6 +25,13 @@ public class PaymentRepository {
         this.jdbc = jdbc;
     }
 
+    /** Lock-free read for the payment GET endpoint; never use it where a row lock is required. */
+    public Optional<Payment> findById(long paymentId) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM payments WHERE id = ?",
+                        PaymentRepository::map, paymentId)
+                .stream().findFirst();
+    }
+
     public Optional<Payment> findForUpdate(long paymentId) {
         return jdbc.query("SELECT " + COLUMNS + " FROM payments WHERE id = ? FOR UPDATE",
                         PaymentRepository::map, paymentId)

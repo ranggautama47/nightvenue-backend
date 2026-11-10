@@ -206,6 +206,42 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /payments/{paymentId}:
+    get:
+      summary: Fetch a recorded payment by id
+      description: |
+        Roles: ADMIN, MANAGER, CASHIER. Returns a safe public payment view:
+        no provider identifiers (provider, provider_order_id,
+        provider_transaction_id, provider_idempotency_key) and no provider
+        charge orchestration metadata (charge_state, charge_started_at,
+        charge_attempts). Unknown or cross-venue payments return 404
+        (concealment). QR data fields for the Xendit slice will be added to
+        this response later, after the provider contract is approved.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: paymentId
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Payment found and the caller has venue access
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentView" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Role not permitted (CUSTOMER)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404":
+          description: Payment not found or payment access denied (cross-venue concealment)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /orders/{orderId}/void:
     post:
       summary: Void an entire open order
@@ -410,6 +446,25 @@ components:
         expiresAt: { type: [string, "null"], format: date-time }
         referenceNote: { type: [string, "null"], maxLength: 100 }
         paidAt: { type: string, format: date-time }
+        createdBy: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64 }
+    PaymentView:
+      type: object
+      required: [id, orderId, venueId, businessDate, shiftId, method, amount, status, expiresAt, referenceNote, paidAt, createdBy, createdAt, updatedAt, version]
+      properties:
+        id: { type: integer, format: int64 }
+        orderId: { type: integer, format: int64 }
+        venueId: { type: integer, format: int64 }
+        businessDate: { type: string, format: date }
+        shiftId: { type: [integer, "null"], format: int64, description: Set for CASH, null for CARD_EDC }
+        method: { type: string, enum: [CASH, CARD_EDC, QRIS_MIDTRANS] }
+        amount: { type: integer, format: int64, minimum: 1 }
+        status: { type: string, enum: [PENDING, PAID, FAILED, EXPIRED, CANCELLED, REFUNDED] }
+        expiresAt: { type: [string, "null"], format: date-time }
+        referenceNote: { type: [string, "null"], maxLength: 100 }
+        paidAt: { type: [string, "null"], format: date-time }
         createdBy: { type: integer, format: int64 }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }

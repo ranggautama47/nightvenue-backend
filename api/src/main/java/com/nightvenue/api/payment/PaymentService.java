@@ -175,6 +175,18 @@ public class PaymentService {
         return response;
     }
 
+    /** Read-only payment lookup for GET /api/v1/payments/{paymentId}; no locks, no writes. */
+    public PaymentView getPayment(long paymentId) {
+        Payment payment = payments.findById(paymentId).orElseThrow(ResourceNotFound::new);
+        try {
+            venues.requireAccess(payment.venueId());
+        } catch (VenueNotFound e) {
+            // Cross-venue concealment: same 404 an unknown id returns
+            throw new ResourceNotFound();
+        }
+        return PaymentView.from(payment);
+    }
+
     /** A2: exposed for unit tests that assert the exact canonical format "v1|42|CASH|10000|" */
     static String canonicalString(long orderId, String method, long amount, String normalizedReferenceNote) {
         return "v1|" + orderId + "|" + method + "|" + amount + "|" + (normalizedReferenceNote == null ? "" : normalizedReferenceNote);
