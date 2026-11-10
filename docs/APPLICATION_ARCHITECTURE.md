@@ -2,6 +2,8 @@
 
 Pemilik: Backend (Claude + Qwen). Disetujui: PM (GPT). Pendamping: `PRD.md`, `DECISIONS.md` (seluruh ADR), `DATABASE.md`, `UML.md`.
 
+**Status pembayaran:** M3-A and V9 are approved. M3-B provider integration and M4 settlement are not implemented in this closure; follow the binding M4 contract in ADR-022.
+
 ---
 
 ## 1. Gambaran Sistem
@@ -19,7 +21,7 @@ flowchart TB
         RD[("Redis")]
     end
 
-    MID["Midtrans Sandbox"]
+    XEN["Xendit (planned; not implemented)"]
     LLM["Gemini / Groq<br/>BYOK"]
 
     FE -- "/api/* rewrite same-origin" --> API
@@ -27,7 +29,7 @@ flowchart TB
     API --> RD
     API -- "HTTP internal + X-Internal-Token" --> ML
     API --> MID
-    MID -- "webhook" --> API
+    XEN -.->|planned provider calls / callback; contract open| API
     API -. "hanya eskalasi chat dengan key" .-> LLM
 ```
 
@@ -49,7 +51,7 @@ Versi dipin di Phase 1 (ADR-018) dan dicatat di `CONTEXT.md`. Yang dikunci adala
 
 | Lapisan | Teknologi |
 |---|---|
-| Frontend | Next.js (App Router), TypeScript strict, Tailwind, shadcn/ui, TanStack Query, Zustand, React Hook Form + Zod, Midtrans Snap.js |
+| Frontend | Next.js (App Router), TypeScript strict, Tailwind, shadcn/ui, TanStack Query, Zustand, React Hook Form + Zod; no provider SDK in browser for planned Xendit flow |
 | Backend | Java LTS, Spring Boot, Spring Security, Spring JDBC (`JdbcTemplate`), Flyway, MapStruct, springdoc-openapi, Actuator, rate limit via Redis |
 | ML | Python, FastAPI, scikit-learn, pandas, joblib |
 | Data | PostgreSQL, Redis |
@@ -104,7 +106,7 @@ DTO in/out (validasi)                                   JdbcTemplate
 2. `@Transactional` hanya di service; batas transaksi = satu use case.
 3. Query atomic stok dan vault ditulis eksplisit melalui `JdbcTemplate`, bukan load-modify-save.
 4. Otorisasi dua lapis: `@PreAuthorize` (role) dan pengecekan venue di service.
-5. Panggilan HTTP eksternal (Midtrans, ML, LLM) **tidak boleh** di dalam transaksi yang memegang lock.
+5. Panggilan HTTP eksternal (provider pembayaran, ML, LLM) **tidak boleh** di dalam transaksi yang memegang lock.
 6. Waktu hanya dari `Clock` yang diinjeksi; business date hanya dari `BusinessDateService` (ADR-001).
 7. Controller chat, order, dan payment tidak saling memanggil lewat HTTP internal.
 8. Urutan lock tetap: baris `orders` → `payments` → `inventory_items` (ID menaik). Jangan dibalik; add-item, payment, webhook, dan VOID semuanya mengikuti urutan ini.
@@ -131,7 +133,7 @@ DTO in/out (validasi)                                   JdbcTemplate
 | Katalog / inventory | `/api/v1/products`, `/api/v1/ingredients`, `/api/v1/recipes`, `/api/v1/inventory`, `POST /api/v1/inventory/{id}/adjust` |
 | Venue / tables | **IMPLEMENTED (Phase 4D):** `/api/v1/tables`. **Phase 5A guard:** manual release or delete is blocked while an active order exists. |
 | Order | **IMPLEMENTED (Phase 5A):** `POST /api/v1/orders` requires `Idempotency-Key` (UUID); same key and payload replays the original 201 response snapshot, while a changed payload returns 422. `GET /api/v1/orders/{id}`; roles ADMIN, MANAGER, CASHIER; access outside the user's venue returns 404. **IMPLEMENTED (Phase 5B):** `POST /api/v1/orders/{id}/items` (Stock-at-Order deduction, Idempotency-Key, order totals recalculation). **PLANNED:** serve, and void endpoints listed below. |
-| Payment | `POST /api/v1/orders/{id}/payments`, `POST /api/v1/webhooks/midtrans` (publik, tanpa JWT) |
+| Payment | Existing `POST /api/v1/orders/{id}/payments`; Xendit callback route and request/response contract are TBD and not added to OpenAPI in this documentation-only migration |
 | Bottle | `POST /api/v1/bottles` (deposit, `Idempotency-Key`), `POST /api/v1/bottles/redeem`, `GET /api/v1/bottles`, `GET /api/v1/customers/me/bottles` |
 | Shift | `POST /api/v1/shifts/open`, `POST /api/v1/shifts/{id}/submit`, `POST /api/v1/shifts/{id}/review`, `GET /api/v1/shifts` |
 | Forecast | `POST /api/v1/forecasts`, `GET /api/v1/forecasts` |
@@ -153,7 +155,7 @@ DTO in/out (validasi)                                   JdbcTemplate
 | Refresh reuse | Kebijakan strict: reuse tombstone mencabut seluruh family refresh milik user dan menulis audit. Dua refresh paralel dengan token sama dapat membuat request yang kalah mencabut semua sesi; FE wajib single-flight |
 | Sesi | Tidak ada umur absolut maksimum pada Month-1. Access JWT tetap berlaku sampai `exp` setelah sesi dicabut/dinonaktifkan; `/me` dan refresh memeriksa status DB |
 | CSRF | CSRF Spring dinonaktifkan untuk API stateless; refresh/logout menggunakan POST dan cookie SameSite=Lax pada same-origin |
-| Webhook Midtrans | Endpoint publik; keamanan dari signature + Status API; idempotensi dari `payment_events` (ADR-006) |
+| Planned Xendit callback | Provider-specific callback verification and status confirmation are M4 work, only after contract verification; preserve the ADR-006 distinction between sender verification and event deduplication |
 | Rate limit | Redis token bucket Lua: login 5/IP/menit, refresh 10/IP/menit, logout 20/IP/menit, `/me` 30/user/menit. Redis gagal → 503. IP memakai `request.getRemoteAddr()` setelah Tomcat memproses proxy tepercaya; `X-Forwarded-For` tidak dibaca manual |
 | Rate-limit caveat | Semua kasir pada satu IP publik berbagi bucket. Vercel tidak memiliki IP egress tetap; batas per-IP produksi best-effort sampai ADR-019 diputuskan dan rewrite FE diverifikasi |
 | BYOK | Key di header `X-AI-Key`, hanya untuk request itu; **transit melalui server**; tidak disimpan, tidak dicatat, tidak masuk telemetry error (ADR-013) |
@@ -221,45 +223,37 @@ Mengapa bukan optimistic lock: bahan populer adalah baris panas; konflik versi m
 
 **CASH / CARD_EDC:** satu transaksi (lock order, validasi sisa, INSERT payment `PAID`, hitung penutupan order). **Setiap payment CASH wajib teratribusi ke shift `OPEN` milik pemrosesnya, apa pun rolenya** (Manager/Admin yang menerima tunai membuka shift sendiri, lihat 7.6); tanpa itu 409 `SHIFT_NOT_OPEN`.
 
-**QRIS (tiga langkah; panggilan eksternal di luar lock):**
-1. TX1: lock order, validasi sisa, INSERT payment `PENDING` (menahan sisa), commit.
-2. Panggil Midtrans (tanpa transaksi dan tanpa lock).
-3. TX2: simpan token/redirect dan `provider_transaction_id`. Bila panggilan gagal, payment diubah `FAILED` sehingga sisa dilepas.
+**Xendit QRIS flow — M3-B/M4 implementation not started.** External calls remain outside database transactions and order locks. M4 verifies authenticated callbacks, deduplicates events, correlates provider evidence, and settles only after verification.
 
-Pemulihan: bila proses mati antara langkah 1 dan 3, payment tertinggal `PENDING` tanpa referensi provider. Job penyapu mengubahnya menjadi `EXPIRED` setelah batas waktu konfigurasi (sisa dilepas). Payment yang sudah punya referensi provider diselesaikan oleh webhook dan Status API.
+1. TX1 locks the order, validates the remaining amount, inserts payment `PENDING` (reserving the amount), and commits.
+2. M3 calls Xendit Create outside the transaction/lock. Exact QRIS `channel_properties`, action descriptor/payload, expiry request, and Create idempotency behavior remain OPEN.
+3. On a confirmed response, M3 stores available provider identifiers. V9 adds `provider_reference_id` for NightVenue's `reference_id` and nullable `provider_request_id VARCHAR(39)` for `payment_request_id`; `provider_transaction_id` remains nullable and its exact Xendit `payment_id` mapping is OPEN_QUESTION for M4.
+4. An ambiguous Create outcome (timeout, dropped connection, or uncertain 5xx) must never cause an automatic second Create. Initially keep payment status `PENDING`, its reservation active, and BR-20 VOID protection active. V9 adds `charge_state=AMBIGUOUS`; M4 may settle it to `PAID` only after authenticated and correlated provider evidence, without changing the charge state. Do not add `PENDING_MANUAL_REVIEW` to the payment status enum.
+5. If `payment_request_id` was not received, recovery by NightVenue `reference_id` has not been verified. Do not retry Create or claim lookup is possible; the operator/reconciliation procedure is OPEN. A Get request can only use a confirmed provider ID and the provider's verified status semantics.
+
+M4 must validate the webhook callback token and separately protect against duplicate events. Correlation uses `reference_id`, `business_id`, `currency`, `amount`, `payment_id`, and `payment_request_id`. An authenticated webhook may recover a missing `payment_request_id`; do not assume Get Payment Request supports `reference_id` lookup because its path requires `payment_request_id`. Only authenticated and correlated provider evidence may settle `AMBIGUOUS` to `PAID`; keep `charge_state=AMBIGUOUS`. Provider responses/callbacks never replace NightVenue as the source of truth.
 
 ```mermaid
 sequenceDiagram
     participant K as Kasir (FE)
     participant A as Spring Boot
     participant D as PostgreSQL
-    participant M as Midtrans
+    participant X as Xendit (planned)
 
-    K->>A: POST /api/v1/orders/id/payments (QRIS_MIDTRANS, amount, Idempotency-Key)
+    K->>A: POST /api/v1/orders/id/payments (planned QRIS, amount, Idempotency-Key; method approval open)
     A->>D: TX1: kunci baris order, validasi sisa, INSERT payment PENDING, COMMIT
-    A->>M: Buat transaksi Snap (di luar transaksi DB)
-    M-->>A: token / redirect_url
-    A->>D: TX2: simpan token provider, atau FAILED bila panggilan gagal
-    A-->>K: payment PENDING + snap token
-    M->>A: POST /api/v1/webhooks/midtrans
-    A->>A: Verifikasi signature SHA512
-    alt signature salah
-        A->>D: audit WEBHOOK_REJECTED
-        A-->>M: 401
-    else signature valid
-        A->>M: GET Status API (konfirmasi)
-        A->>D: BEGIN
-        A->>D: INSERT payment_events ON CONFLICT DO NOTHING
-        alt 0 baris (event_key sudah ada)
-            A->>D: ROLLBACK (duplikat, no-op, dicatat di log terstruktur)
-        else 1 baris
-            A->>D: Kunci baris order, transisi status payment via state machine (tolak mundur)
-            A->>D: Hitung paid_total lalu order PAID bila syarat BR-05 terpenuhi
-            Note over A,D: Tidak ada pemotongan atau pengembalian stok di sini
-        end
-        A->>D: COMMIT
-        A-->>M: 200 OK
+    A->>X: M3: Create (outside transaction/lock)
+    alt confirmed Create response
+        X-->>A: provider response (QRIS shape remains OPEN)
+        A->>D: TX2: persist confirmed provider identifiers
+        A-->>K: safe payment/QR data via NightVenue backend (shape OPEN)
+    else ambiguous Create outcome
+        X--xA: timeout / connection drop / uncertain 5xx
+        Note over A,D: No second Create; status stays PENDING, reservation and BR-20 guard stay active
+        A->>D: persist separate recovery state (AMBIGUOUS; V9)
     end
+
+    Note over A,X: M4 callback verification, deduplication, and settlement are deferred until provider facts are verified
 ```
 
 Duplikat dideteksi lewat `INSERT ... ON CONFLICT DO NOTHING` (0 baris), bukan dengan menangkap exception di transaksi utama, karena di PostgreSQL pelanggaran unique membatalkan transaksi. Pengiriman duplikat tidak menambah baris `payment_events`; buktinya log terstruktur (`event_key`, `payment_id`).
@@ -431,11 +425,11 @@ Log JSON terstruktur + `X-Request-Id` di MDC; `/actuator/health` (liveness/readi
 | `AUTH_RATE_LIMIT_*`, `AUTH_RATE_LIMIT_*_PERIOD` | Kapasitas dan periode token bucket tiap endpoint auth |
 | `APP_TRUSTED_PROXIES` | Regex alamat proxy internal Tomcat; isi hanya proxy yang dipercaya |
 | `NIGHTVENUE_OPENAPI_PUBLIC` | Membuka dokumen OpenAPI hanya bila diaktifkan eksplisit pada lingkungan non-produksi |
-| `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION=false` | Sandbox |
+| Xendit credentials/configuration | Not configured by this documentation-only migration; names and deployment policy require separate implementation/configuration approval |
 | `ML_SERVICE_URL`, `ML_INTERNAL_TOKEN`, `ML_CLASSIFY_TIMEOUT_MS`, `ML_FORECAST_TIMEOUT_MS` | Antar-service |
 | `CHAT_CONFIDENCE_THRESHOLD`, `CHAT_RATE_LIMIT_PER_MIN`, `LLM_PRICING_CONFIG` | Chat dan estimasi biaya |
 | `APP_CORS_ALLOWED_ORIGINS`, `APP_TRUSTED_PROXIES` | Keamanan |
-| Frontend: `API_BASE_URL` (target rewrite), `NEXT_PUBLIC_MIDTRANS_CLIENT_KEY` | |
+| Frontend: `API_BASE_URL` (target rewrite) | Browser never calls Xendit directly and receives no Xendit secret |
 
 Tidak ada variabel untuk API key LLM (BYOK, tidak disimpan). Tidak ada konfigurasi SMTP (password recovery deferred).
 
@@ -445,7 +439,7 @@ Tidak ada variabel untuk API key LLM (BYOK, tidak disimpan). Tidak ada konfigura
 |---|---|
 | Lokal backend | `docker compose up` (api, ml-service, postgres, redis) |
 | Lokal frontend | `npm run dev`, rewrite ke `http://localhost:8080` |
-| Webhook lokal | Tunnel (cloudflared/ngrok) ke `/api/v1/webhooks/midtrans` |
+| Planned provider callback lokal | Route and testing approach TBD after provider contract and implementation approval |
 | FE produksi | Vercel (preview per PR) |
 | BE produksi | Image GHCR → hosting hasil spike (ADR-019) → health check pasca-deploy |
 

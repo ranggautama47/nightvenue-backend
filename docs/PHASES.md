@@ -95,18 +95,28 @@ Pemetaan minggu (target): M1 = Fase 0–2 (+ awal 3); M2 = Fase 3–5; M3 = Fase
 
 ### Fase 6 — Pembayaran
 **FR**: PAY-01..08. **Kritis.**
+**Status provider:** M3-A is implemented. V9 and its schema migration tests are approved in this closure. Xendit provider calls, M3-B implementation, and M4 remain out of this closure.
+
+The payment workstream milestones below are distinct from the M1–M4 month mapping in section 1:
+- **Payment M3-A — payment core:** complete at current feature HEAD.
+- **Payment M3-B — provider integration:** not started in this closure.
+- **Payment M4 — callback verification, deduplication, and settlement:** future implementation; require authenticated callbacks, correlated provider evidence, verified status semantics, and duplicate event protection.
+
 **DoD**
 - [ ] BR-20 rejects VOID when payment is PENDING/PAID; payment-vs-VOID race test; lock order `orders` → `payments` → `inventory_items`
 - [ ] Payment guard for PENDING/PAID transactions: deferred to Phase 6. Not implemented in Phase 5C.
-- [ ] CASH, CARD_EDC, QRIS Sandbox; Order 1:N Payment; split nominal
+- [x] CASH and CARD_EDC payment core; Order 1:N Payment; split nominal. Preserve legacy `QRIS_MIDTRANS`.
 - [ ] Pembuatan payment diserialkan lewat lock baris order; uji konkurensi: dua payment paralel (key berbeda) tidak melampaui tagihan (FR-PAY-09)
-- [ ] QRIS memakai pola TX1 → panggilan Midtrans di luar lock → TX2; job penyapu `PENDING` tanpa referensi provider
+- [ ] M3-B: execute provider calls outside order locks; persist `reference_id` in `provider_reference_id` and `payment_request_id` in nullable `provider_request_id`.
+- [ ] Ambiguous Create never automatically retries. It starts as payment status `PENDING`; M4 may settle `charge_state=AMBIGUOUS` to status `PAID` only after authenticated and correlated provider evidence.
+- [ ] M4 correlation uses `reference_id`, `business_id`, `currency`, `amount`, `payment_id`, and `payment_request_id`; validate webhook token and protect against duplicate events. Do not assume Get Payment Request supports `reference_id` lookup; its path requires `payment_request_id`.
 - [ ] Webhook duplikat memakai `ON CONFLICT DO NOTHING`; satu record `payment_events` per `event_key`
-- [ ] Signature SHA-512 divalidasi; Status API dikonfirmasi; `payment_events` UQ
 - [ ] **Bukti B**: webhook dikirim berulang/paralel → transisi payment/order sekali, inventory tidak berubah
 - [ ] Out-of-order → `IGNORED_STALE`; settlement pada order VOIDED → tercatat + audit anomali
 - [ ] Minimum spend ditegakkan sebelum PAID
 - [ ] Tidak ada panggilan HTTP eksternal di dalam transaksi berlock
+- [x] V9 migration and schema tests approved; V1–V8 unchanged. `AMBIGUOUS` may coexist with status `PAID` after evidence-based settlement.
+- [ ] Keep QRIS-specific `channel_properties`, action/payload shape, expiry request, Create idempotency, ambiguous recovery without a received `payment_request_id`, and status semantics OPEN until verified.
 
 ### Fase 7 — Bottle keeping
 **FR**: BTL-01..06. **Kritis.**

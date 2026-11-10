@@ -33,7 +33,7 @@ Pendamping: `PHASES.md`, `CONTEXT.md`, `DECISIONS.md`. Owner (Rangga) adalah pen
 ### Human understanding gate
 Untuk topik **inventory, VOID, payment, business day, ML, LLM**: Owner harus membaca PR dan mampu menjelaskan alurnya dengan kata sendiri sebelum merge.
 
-Owner wajib mampu menjelaskan secara spesifik: **Stock-at-Order, conditional UPDATE, race condition, VOID compensation, Midtrans signature, webhook idempotency, Business Date, TF-IDF, Logistic Regression, confidence threshold, baseline evaluation, BYOK, dan LLM grounding**. Contoh pertanyaan uji: mengapa conditional UPDATE mencegah oversell? Apa beda verifikasi signature dengan idempotensi webhook? Mengapa `Idempotency-Key` tidak mencegah dua payment berbeda melampaui tagihan? Agent menyediakan ringkasan "cara kerja dan alasan" di laporan PR. Tujuannya agar portofolio dapat dipertanggungjawabkan di wawancara.
+Owner wajib mampu menjelaskan secara spesifik: **Stock-at-Order, conditional UPDATE, race condition, VOID compensation, provider callback verification, webhook idempotency, ambiguous Xendit Create recovery, Business Date, TF-IDF, Logistic Regression, confidence threshold, baseline evaluation, BYOK, dan LLM grounding**. Xendit is a documentation-planning target only, not implemented. Contoh pertanyaan uji: mengapa conditional UPDATE mencegah oversell? Apa beda verifikasi pengirim dengan idempotensi webhook? Mengapa payment `PENDING` yang Create-nya ambigu harus tetap menahan amount dan memblokir VOID, dan mengapa Create tidak boleh otomatis diulang? Mengapa `Idempotency-Key` tidak mencegah dua payment berbeda melampaui tagihan? Agent menyediakan ringkasan "cara kerja dan alasan" di laporan PR. Tujuannya agar portofolio dapat dipertanggungjawabkan di wawancara.
 
 ---
 

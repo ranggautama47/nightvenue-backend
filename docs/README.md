@@ -1,4 +1,4 @@
-# NightVenue Docs (v2.1)
+# NightVenue Docs (v2.2 PM final sync)
 
 Folder ini adalah **satu-satunya sumber kebenaran** untuk desain backend NightVenue. Jangan menyimpan salinan di tempat lain.
 
@@ -8,7 +8,7 @@ Folder ini adalah **satu-satunya sumber kebenaran** untuk desain backend NightVe
 |---|---|---|
 | 1 | `../CONTEXT.md` | Ringkasan untuk agent (aturan kritis, batas arsitektur) |
 | 2 | `PRD.md` | Tujuan, scope, role, aturan bisnis (BR), kebutuhan fungsional (FR) |
-| 3 | `DECISIONS.md` | ADR-001..020 + Changelog v2.1 (alasan di balik keputusan) |
+| 3 | `DECISIONS.md` | ADR-001..022 + Changelogs v2.1/v2.2; ADR-022 records the approved M3-A/V9 scope and binding M4 contract |
 | 4 | `APPLICATION_ARCHITECTURE.md` | Arsitektur, alur kritis, API, keamanan |
 | 5 | `DATABASE.md` | Skema, constraint, relasi, seed |
 | 6 | `UML.md` | Use case, kelas, sequence, state machine |

@@ -190,12 +190,15 @@ Detail void (alasan, pelaku, disposition) ada di `void_logs`, tidak diduplikasi 
 | venue_id | BIGINT | FK NN (disalin dari order; untuk index per venue-malam) |
 | business_date | DATE | NN (saat payment dibuat) |
 | shift_id | BIGINT | FK→cashier_shifts nullable (ditambahkan Fase 6). Wajib terisi untuk `method = CASH` (divalidasi aplikasi; semua role) |
-| method | VARCHAR(20) | NN CK `CASH, CARD_EDC, QRIS_MIDTRANS` |
+| method | VARCHAR(20) | NN; V9 allows `CASH, CARD_EDC, QRIS_MIDTRANS, QRIS`; preserve legacy rows. |
 | amount | BIGINT | NN CK > 0; ≤ `total_due − SUM(PAID) − SUM(PENDING)`, divalidasi di bawah lock baris order (ADR-005, BR-28) |
-| status | VARCHAR(12) | NN CK `PENDING, PAID, FAILED, EXPIRED, CANCELLED, REFUNDED` (`REFUNDED` dicadangkan) |
-| provider | VARCHAR(20) | `MIDTRANS` atau null |
-| provider_order_id | VARCHAR(60) | UQ nullable |
-| provider_transaction_id | VARCHAR(80) | |
+| status | VARCHAR(12) | NN CK `PENDING, PAID, FAILED, EXPIRED, CANCELLED, REFUNDED` (`REFUNDED` dicadangkan). An ambiguous Create starts `PENDING`; M4 may settle it to `PAID` only after authenticated and correlated provider evidence. |
+| provider | VARCHAR(20) | `MIDTRANS` or `XENDIT`, or null for offline payments. |
+| provider_order_id | VARCHAR(60) | Existing UQ nullable; preserves legacy Midtrans values. |
+| provider_reference_id | VARCHAR(64) | Nullable unique NightVenue reference sent as Xendit `reference_id`. |
+| provider_request_id | VARCHAR(39) | Nullable unique Xendit `payment_request_id`; an authenticated webhook may supply it when Create did not return it. |
+| provider_transaction_id | VARCHAR(80) | Nullable; Xendit `payment_id` mapping remains OPEN_QUESTION for M4. |
+| charge_state | VARCHAR(12) | V9 adds `AMBIGUOUS` to the V8 values `NOT_SENT`, `SENDING`, `ACCEPTED`, `REJECTED`. `AMBIGUOUS` may remain paired with payment status `PAID` after verified settlement. |
 | reference_note | VARCHAR(100) | nomor struk EDC dll. |
 | paid_at | TIMESTAMPTZ | |
 | created_by | BIGINT | FK→users NN |
@@ -208,8 +211,8 @@ Detail void (alasan, pelaku, disposition) ada di `void_logs`, tidak diduplikasi 
 | id | BIGINT | PK |
 | payment_id | BIGINT | FK NN (ON DELETE RESTRICT) |
 | provider | VARCHAR(20) | NN |
-| event_key | VARCHAR(160) | NN, **UQ `(provider, event_key)`**; `transaction_id:transaction_status:status_code` |
-| result | VARCHAR(15) | NN CK `PROCESSED, IGNORED_STALE, REJECTED` (`REJECTED` = signature valid tetapi gagal verifikasi Status API / nominal tidak cocok) |
+| event_key | VARCHAR(160) | NN, **UQ `(provider, event_key)`**. Duplicate webhook events are rejected by this uniqueness guard; exact Xendit event-key construction remains OPEN. |
+| result | VARCHAR(15) | NN CK `PROCESSED, IGNORED_STALE, REJECTED`; M4 validates the webhook token before processing and verifies provider status semantics. |
 | payload_snapshot | JSONB | NN. Snapshot tersanitasi berbasis allowlist, bukan payload mentah; tanpa secret, signature, atau header |
 | received_at | TIMESTAMPTZ | NN |
 
@@ -532,3 +535,13 @@ Riwayat order/payment sintetis bersifat opsional (Fase 11, hanya bila dibutuhkan
 4. Tidak ada `DROP` data tanpa persetujuan PM.
 5. Migration dipecah per fase sesuai bagian 2; `payments.shift_id` ditambahkan oleh migrasi Fase 6 karena `cashier_shifts` dibuat di sana.
 6. Agent yang membuat migration melaporkan nama file di laporan PR. Seeder berjalan dua kali tanpa duplikat.
+
+### V9 — PM approved; migration and schema tests in this change
+
+- V1–V8 are unchanged. V9 adds Xendit QRIS while preserving legacy `QRIS_MIDTRANS` rows and constraints.
+- `provider_request_id` is nullable or populated for `AMBIGUOUS` rows. M4 may recover `payment_request_id` from an authenticated webhook.
+- `charge_state=AMBIGUOUS` may coexist with payment status `PAID`, but M4 can settle it only after authenticated and correlated provider evidence.
+- M4 correlation uses `reference_id`, `business_id`, `currency`, `amount`, `payment_id`, and `payment_request_id`; webhook token validation and duplicate event protection are required.
+- Do not assume Get Payment Request supports lookup by `reference_id`; its documented path requires `payment_request_id`.
+- Keep `provider_transaction_id` nullable. Its exact Xendit `payment_id` mapping remains OPEN_QUESTION for M4; do not constrain the field permanently to NULL.
+- Keep `REFUNDED` outside the current Xendit state/status matrix until the M4/M6 refund lifecycle is approved.

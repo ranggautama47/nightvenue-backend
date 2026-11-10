@@ -1,15 +1,15 @@
-# NightVenue — PRD v2.1 (Backend Architecture Frozen Candidate)
+# NightVenue — PRD v2.2 (Xendit M3-A/V9 Closure)
 
 | Item | Isi |
 |---|---|
-| Status | v2.1: v2.0 + 12 delta hasil semantic audit PM dan OD-11. Menunggu persetujuan PM (`BACKEND_READY_FOR_PHASE_1`) |
+| Status | PM approved M3-A, V9, schema tests, and documentation in the stated order. M3-B and M4 implementation and provider traffic are outside this closure. |
 | Tanggal | 2026-10-24 (v2.0: 2026-10-23) |
 | Owner | Rangga (keputusan akhir dan integrator) |
 | PM | GPT |
 | Posisi | **NightVenue — Intelligent Nightlife Venue Operations Platform** (produk fiktif) |
 | Dokumen turunan | `DECISIONS.md`, `CONTEXT.md`, `AI_PERAN.md`, `PHASES.md`, `APPLICATION_ARCHITECTURE.md`, `DATABASE.md`, `UML.md` |
 | `DESIGN_SYSTEM.md` | **Tidak ditulis Claude** (instruksi Owner). Gerbang **implementasi frontend**, bukan gerbang backend: ditulis DeepSeek, direview Gemini, disetujui PM (OD-8). Backend Phase 1 tidak menunggunya |
-| Revisi v2.1 | Daftar delta ada di `DECISIONS.md` bagian Changelog v2.1 |
+| Revisi v2.2 | PM FINAL SYNC approved M3-A and V9 with binding M4 conditions in `DECISIONS.md` (ADR-022). |
 
 Urutan otoritas bila dokumen bertentangan: PRD untuk perilaku produk, `DATABASE.md` untuk skema, `APPLICATION_ARCHITECTURE.md` untuk teknis, `DECISIONS.md` untuk alasan. Konflik dilaporkan ke PM, bukan diselesaikan sendiri oleh agent.
 
@@ -24,7 +24,7 @@ Perubahan dari v1.0: chatbot hybrid (bukan FAQ default), Business Day kanonik, s
 | ID | Temuan | Status v2.0 |
 |---|---|---|
 | A1 | Stok dipotong setelah webhook paid → oversell | Berlaku: Stock-at-Order (ADR-003) |
-| A2 | Hanya Midtrans | Berlaku: `CASH`, `CARD_EDC`, `QRIS_MIDTRANS` |
+| A2 | Hanya Midtrans | Provider-specific clauses are partially superseded by approved ADR-022. Preserve legacy `QRIS_MIDTRANS`; M3-B/M4 Xendit provider integration is not implemented. |
 | A3 | Optimistic lock untuk baris stok panas | Berlaku: conditional UPDATE + urutan ID |
 | A4 | BYOK untuk pelanggan nyata tak realistis; usulan FAQ default | **Diganti**: audiens adalah recruiter, chat hybrid (ADR-011). Asumsi v1.0 salah untuk konteks portfolio |
 | A5 | ML tanpa data dan tanpa baseline | Berlaku: data sintetis berlabel + baseline (ADR-015) |
@@ -34,7 +34,7 @@ Perubahan dari v1.0: chatbot hybrid (bukan FAQ default), Business Day kanonik, s
 | A9 | Hari operasional | **Dipertegas**: `business_day_cutoff_hour` + `BusinessDateService` (ADR-001) |
 | A10 | Pajak/service/basis minimum spend | Berlaku: basis = subtotal setelah diskon, sebelum pajak dan service |
 | A11 | Double-tap | Berlaku: `Idempotency-Key` |
-| A12 | Webhook: signature + Status API + event unik | Berlaku (ADR-006) |
+| A12 | Webhook: sender verification + event uniqueness | Domain distinction remains (ADR-006); Midtrans signature/Status API details are provider-specific historical clauses and do not define the Xendit contract |
 | A13 | Cookie lintas domain | Berlaku (ADR-009) |
 | A14 | Drift kontrak API | Berlaku: tipe digenerate dari OpenAPI |
 | A15 | Terlalu banyak fase untuk satu developer | **Diubah**: Tier 1 dan Tier 2 jadi target Month-1; urutan potong ditetapkan (ADR-017) |
@@ -94,7 +94,7 @@ Prinsip: *Stack is not the differentiator. Engineering decisions are.* dan *Comp
 
 **Bukan**: CRUD bootcamp, prototype hackathon, kumpulan teknologi tren, POS restoran biasa dengan nama diganti.
 
-**Non-goals**: Kubernetes, Kafka, RabbitMQ, Elasticsearch, event sourcing, CQRS, GraphQL, service mesh, banyak microservice Java, blockchain, voice ordering, rekomendasi AI palsu, WebSocket tanpa kebutuhan nyata, payment gateway selain Midtrans Sandbox, aplikasi mobile native, sistem pajak sesuai regulasi.
+**Non-goals**: Kubernetes, Kafka, RabbitMQ, Elasticsearch, event sourcing, CQRS, GraphQL, service mesh, banyak microservice Java, blockchain, voice ordering, rekomendasi AI palsu, WebSocket tanpa kebutuhan nyata, provider migration or live/test provider traffic under this documentation-only authorization, aplikasi mobile native, sistem pajak sesuai regulasi.
 
 ---
 
@@ -128,7 +128,7 @@ Role: `ADMIN`, `MANAGER`, `CASHIER`, `CUSTOMER`. Otorisasi di backend; cek role 
 ## 5. Scope
 
 ### 5.1 Tier 1 — Nightlife Transaction Core (wajib)
-Autentikasi, RBAC, konfigurasi venue, Business Day Cutoff, produk, bahan, recipe, inventory, Stock-at-Order, pemotongan stok atomic, siklus order, CASH, CARD_EDC, QRIS Midtrans Sandbox, state machine payment, verifikasi dan idempotensi webhook, minimum spend, Bottle Keeping (deposit, redemption, expiry), VOID dan pengembalian stok transaksional, Shift Reconciliation + review manager, CI/CD, integration test, deployment publik.
+Autentikasi, RBAC, konfigurasi venue, Business Day Cutoff, produk, bahan, recipe, inventory, Stock-at-Order, pemotongan stok atomic, siklus order, CASH, CARD_EDC, M3-A payment core, approved V9 schema, M3-B Xendit provider integration and M4 callback settlement (future implementation), minimum spend, Bottle Keeping (deposit, redemption, expiry), VOID dan pengembalian stok transaksional, Shift Reconciliation + review manager, CI/CD, integration test, deployment publik.
 
 ### 5.2 Tier 2 — AI/ML Differentiator (target Month-1)
 FastAPI ML service, intent classifier, chat lokal berbasis database, confidence threshold, fallback Spring deterministik, BYOK Gemini/Groq, rate limiting Redis, guardrail AI, evaluasi classifier, forecasting inventory + baseline, analisis biaya dan latensi.
@@ -186,7 +186,7 @@ Skema untuk fitur deferred sudah dirancang di `DATABASE.md` (bagian "Deferred") 
 | BR-25 | Redeem mensyaratkan QR token valid + `order.customer_id` = pemilik vault + `ownerConfirmed` (ADR-020) |
 | BR-26 | Penjualan memotong satu lokasi `BAR` per venue (multi-bar deferred) |
 | BR-27 | Tidak ada metrik di README tanpa pengukuran NightVenue sendiri (ADR-016) |
-| BR-28 | Pembuatan payment diserialkan terhadap baris order; `amount ≤ total_due − SUM(PAID) − SUM(PENDING)` (PENDING menahan sisa); panggilan Midtrans di luar lock (ADR-005) |
+| BR-28 | Pembuatan payment diserialkan terhadap baris order; `amount ≤ total_due − SUM(PAID) − SUM(PENDING)` (`PENDING` menahan sisa); panggilan provider di luar lock (ADR-005). Hasil Create yang ambigu tetap `PENDING`, mempertahankan reservasi dan BR-20, serta tidak boleh memicu Create otomatis kedua. |
 | BR-29 | Satu botol fisik = satu order item `quantity = 1`; `bottle_vaults.source_order_item_id` UNIQUE; deposit memakai `Idempotency-Key` |
 | BR-30 | Review shift tidak boleh dilakukan oleh pemilik shift itu sendiri |
 
@@ -245,14 +245,15 @@ Acceptance dalam bentuk ringkas Given/When/Then. Semua FR berikut adalah Month-1
 | ID | Requirement | Acceptance |
 |---|---|---|
 | FR-PAY-01 | CASH dan CARD_EDC | Cukup bayar → order `PAID`, `closed_at`, meja `AVAILABLE`; nominal ≤ sisa tagihan |
-| FR-PAY-02 | QRIS via Midtrans Sandbox | `provider_order_id` unik; status `PENDING` |
-| FR-PAY-03 | Webhook memverifikasi signature + Status API | Signature salah → 401, tidak ada perubahan state |
+| FR-PAY-02 | QRIS provider integration (Xendit Payment Requests v3 is the planned documentation target only; not implemented) | Existing `QRIS_MIDTRANS` data remains valid; status `PENDING`; provider contract and method-schema decisions remain open |
+| FR-PAY-03 | Planned callback verification and provider status confirmation | Exact QRIS callback/status semantics remain open; no implementation or response contract is implied |
 | FR-PAY-04 | Webhook idempotent | Payload sama 5× → hanya satu record `payment_events` diproses; empat duplikat menjadi no-op (`ON CONFLICT DO NOTHING`) yang teramati lewat log terstruktur |
 | FR-PAY-05 | Webhook tidak berurutan | `settlement` lalu `pending` tidak menurunkan status |
 | FR-PAY-06 | Payment kedaluwarsa | `EXPIRED` tidak dihitung ke `paid_total` |
 | FR-PAY-07 | Beberapa payment per order (split nominal) | 2jt + 1jt + 1jt untuk tagihan 4jt → `PAID` hanya setelah semuanya sukses |
 | FR-PAY-08 | Settlement pada order `VOIDED` | Tercatat sebagai anomali, order tetap `VOIDED` |
 | FR-PAY-09 | Payment konkuren pada order yang sama | Dua payment 3jt paralel (key berbeda) untuk tagihan 4jt → tepat satu sukses, satu 422; `SUM(PAID)+SUM(PENDING) ≤ total_due` |
+| FR-PAY-10 | Ambiguous Xendit Create recovery | Never retry Create automatically; initially keep business status `PENDING`, active amount reservation, and BR-20 VOID protection. M4 may settle `charge_state=AMBIGUOUS` to `PAID` only after authenticated and correlated evidence; keep recovery state separate from business status. |
 
 ### FR-BTL Bottle Keeping (Tier 1)
 | ID | Requirement | Acceptance |
@@ -385,15 +386,15 @@ CI aktif sejak commit pertama. `main` diproteksi. Target hosting: ADR-019 (setel
 | Dataset classifier bocor / terlalu mirip | Akurasi menyesatkan | Aturan kebocoran, set uji terpisah, baseline |
 | Recruiter enggan memasukkan API key | Bagian LLM tidak terlihat | Demo lokal tanpa key; transkrip dan video untuk jalur LLM |
 | Hosting demo gagal | Tidak ada demo publik | Spike Phase 1; fallback video + panduan lokal |
-| Midtrans Sandbox berubah | Phase 6 tersendat | Interface `PaymentGateway` |
-| Webhook butuh URL publik saat lokal | Tidak bisa diuji | Tunnel didokumentasikan |
+| Xendit QRIS Payment Requests v3 contract gaps | Phase 6 cannot safely implement QRIS | Keep request/response, expiry, Create idempotency, and provider status mapping open; follow the approved M4 authenticated correlation and duplicate protection contract; no assumptions or provider traffic |
+| Provider callback butuh URL publik saat lokal | Callback testing tidak dapat dilakukan | Defer callback verification and testing to M4 after the provider contract is verified |
 | Bocor secret oleh agent | Insiden | gitleaks, `.env.example`, aturan agent |
 | Dua agent FE tanpa design system | UI tidak konsisten | `DESIGN_SYSTEM.md` oleh agent lain sebelum UI pertama |
 | Klaim berlebihan di README | Kredibilitas turun | BR-27, ADR-016 |
 
 ## 13. Keputusan Terbuka
 
-Default dipakai bila tidak dijawab.
+Defaults apply only where a safe default is stated. Provider-contract and schema items marked OPEN have no assumed default and require verification or PM decision.
 
 | ID | Pertanyaan | Default |
 |---|---|---|
@@ -408,6 +409,12 @@ Default dipakai bila tidak dijawab.
 | **OD-9** | Sediakan key LLM demo di server dengan batas harian? | Tidak (risiko biaya dan penyalahgunaan); jalur LLM didemokan lewat video dan transkrip |
 | **OD-10** | Nilai ambang void dan θ confidence | Ambang void: contoh demo di seed. θ: dipilih dari validation set setelah Phase 9 |
 | **OD-11** | Minimum spend tidak tercapai dan pelanggan menolak membayar selisih | Batas Month-1 yang diterima: lihat Keterbatasan Month-1. Tidak ada fitur baru; ADR kecil hanya bila Fase 5 menemukan alur settlement realistis yang tidak mungkin |
+| **OD-12** | QRIS Indonesia Payment Requests v3 `channel_properties`, action descriptor, and payload | OPEN; verify the exact provider contract before documenting implementation fields |
+| **OD-13** | QRIS-specific expiry request behavior | OPEN; do not infer request fields from general QRIS expiry documentation |
+| **OD-14** | Create idempotency guarantee and recovery when the response is ambiguous and no `payment_request_id` was received | OPEN; no automatic second Create; Get Payment Request requires `payment_request_id`; authenticated webhook may recover it |
+| **OD-15** | QRIS-specific provider status semantics and callback verification/deduplication contract | Partially approved: validate callback token, correlate all approved identifiers/amount fields, and protect duplicate events; provider status mapping and exact event-key shape remain OPEN |
+| **OD-16** | Operator and reconciliation process for payments requiring manual review | OPEN; recovery metadata is separate from business status |
+| **OD-17** | PM approval for the provider-neutral `QRIS` method and V9 schema/constraint changes | APPROVED; preserve V1–V8 and legacy `QRIS_MIDTRANS` |
 
 ### Keterbatasan Month-1 (sengaja)
 
