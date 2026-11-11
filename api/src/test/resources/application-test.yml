@@ -12,6 +12,12 @@ nightvenue:
   payment:
     xendit:
       callback-token: test-callback-token
+    reconciliation:
+      enabled: false
+      fixed-delay: PT1H
+      min-age: PT1H
+      batch-size: 50
+      max-per-cycle: 50
   auth:
     jwt-secret: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
     access-ttl: PT15M
