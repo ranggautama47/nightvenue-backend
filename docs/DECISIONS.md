@@ -507,6 +507,17 @@ The approved commit order is M3-A only, then V9 plus `PaymentSchemaMigrationTest
 - Status API 404, timeout, connection errors, 5xx, 401/403, or malformed responses cause HTTP 503 and no event/payment mutation. 404 never means payment failure or expiry.
 - M4-A handles documented `payment.capture` and `payment.failure` payloads under top-level `event` and nested `data`. Do not infer `payment_request.expiry` fields; defer it to M4-B reconciliation.
 
+### PM Closure — M4-A/M4-B (approved)
+
+- Reconciliation defaults (D1, approved): `enabled=false`, `fixedDelay=PT5M`, `minAge=PT1H`, `batchSize=50`, `maxPerCycle=10`. Initial operational defaults, not guaranteed SLAs. Scheduling stays disabled by default; do not auto-enable it in production configuration.
+- Provider `CANCELED` (D2, approved): no payment status mutation, no event insertion, one sanitized warning per cycle reporting affected payment IDs for manual review. `PaymentStateMachine` is not modified for `PENDING -> CANCELLED`; reservations remain held and BR-20 may block VOID until the row is manually resolved.
+- SENDING / missing `provider_request_id` (D3, approved): never polled, never marked FAILED/EXPIRED/PAID from elapsed time; manual review only. Recovery through the webhook remains allowed only with verified provider evidence and reference correlation.
+- Terminal resurrection (D4, REJECTED): FAILED/EXPIRED/CANCELLED never become PAID. The M4-A policy stands: unchanged payment plus a linked `REJECTED` event and anomaly.
+- Payment request ID mismatch (D5): a Status API response whose `id` differs from the requested ID is MALFORMED and can never settle or mutate a payment (unit test `statusApi_responseIdDifferentFromRequestedId_isMalformed`, integration test `paymentRequestIdMismatchResponseNeverMutatesOrSettles`).
+- SENDING + verified `payment.failure` (D6, approved): the settlement CAS writes `charge_state=AMBIGUOUS` together with `status=FAILED` in one conditional update. `AMBIGUOUS` records the unknown local Create acknowledgement while the payment outcome has been independently verified as FAILED. Verified against the committed V9 constraints on Testcontainers PostgreSQL (no SQLSTATE 23514); see `paymentFailureOnSendingRowWritesV9ValidFailedOutcome`.
+- Reconciliation events use `event_key = reconcile:<providerStatus>:<payment_request_id>:<payment_id>` so one outcome cannot shadow a later one; the scheduler is conditional on `enabled=true` and multi-instance safety relies on the settlement CAS, not a distributed lock.
+- No automatic local QRIS expiry assumption: `payment_request.expiry` stays acknowledged with 200 and no change; expiry is only resolved through the verified Status API.
+
 ---
 
 ## Changelog v2.1 (semantic audit PM)

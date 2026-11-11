@@ -100,7 +100,10 @@ Pemetaan minggu (target): M1 = Fase 0–2 (+ awal 3); M2 = Fase 3–5; M3 = Fase
 The payment workstream milestones below are distinct from the M1–M4 month mapping in section 1:
 - **Payment M3-A — payment core:** complete at current feature HEAD.
 - **Payment M3-B — provider integration:** not started in this closure.
-- **Payment M4 — callback verification, deduplication, and settlement:** future implementation; require authenticated callbacks, correlated provider evidence, verified status semantics, and duplicate event protection.
+- **Payment M4 — callback verification, deduplication, and settlement:** implemented (M4-A) with authenticated callbacks, correlated provider evidence, verified status semantics, and duplicate event protection.
+- **Payment M4-B — reconciliation:** stale Xendit QRIS payments resolve through `GET /v3/payment_requests/{payment_request_id}` outside any transaction; SENDING / missing request-id rows and provider `CANCELED` go to manual review and are never mutated from elapsed time; terminal resurrection remains rejected.
+
+**Payment M4 closure (PM approved):** reconciliation defaults are `enabled=false`, `fixed-delay=PT5M`, `min-age=PT1H`, `batch-size=50`, `max-per-cycle=10`; the scheduler is disabled by default and multi-instance safety relies on the settlement CAS. No automatic local QRIS expiry: `payment_request.expiry` stays acknowledged 200/no-change and expiry resolves only via the verified Status API.
 
 **DoD**
 - [ ] BR-20 rejects VOID when payment is PENDING/PAID; payment-vs-VOID race test; lock order `orders` → `payments` → `inventory_items`
