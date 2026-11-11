@@ -25,7 +25,7 @@ public final class XenditStub {
     public static final String SECRET = "test-secret-not-real";
     public static final int READ_TIMEOUT_MS = 2000;
 
-    public enum Mode { SUCCESS, NO_QR, NO_ID, LONG_ID, VALIDATION, SERVER_500, TIMEOUT, FENCE, FAIL_TX2, BLOCKED }
+    public enum Mode { SUCCESS, NO_QR, NO_ID, LONG_ID, VALIDATION, SERVER_500, TIMEOUT, FENCE, FAIL_TX2, BLOCKED, STATUS_SUCCESS, STATUS_404, STATUS_500, STATUS_401, STATUS_403, STATUS_TIMEOUT, STATUS_MALFORMED, STATUS_UNMATCHED, STATUS_FAILED, STATUS_EXPIRED, STATUS_CANCELED }
 
     private static final HttpServer SERVER;
     private static final AtomicInteger COUNT = new AtomicInteger();
@@ -34,6 +34,7 @@ public final class XenditStub {
     private static volatile String currentKey;
     private static volatile JdbcTemplate jdbc;
     private static volatile CountDownLatch blockLatch = new CountDownLatch(0);
+    private static volatile String statusReference = "nv_pay_1";
 
     public static volatile String lastAuth;
     public static volatile String lastApiVersion;
@@ -47,6 +48,27 @@ public final class XenditStub {
         }
         SERVER.createContext("/v3/payment_requests", exchange -> {
             COUNT.incrementAndGet();
+            if ("GET".equals(exchange.getRequestMethod())) {
+                String[] pathParts = exchange.getRequestURI().getPath().split("/");
+                String requestedId = pathParts[pathParts.length - 1];
+                switch (mode) {
+                    case STATUS_404 -> respond(exchange, 404, "{}");
+                    case STATUS_500 -> respond(exchange, 500, "{}");
+                    case STATUS_401 -> respond(exchange, 401, "{}");
+                    case STATUS_403 -> respond(exchange, 403, "{}");
+                    case STATUS_MALFORMED -> respond(exchange, 200, "not-json");
+                    case STATUS_TIMEOUT -> {
+                        try { Thread.sleep(1500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                        respond(exchange, 200, statusBody(requestedId, "SUCCEEDED"));
+                    }
+                    case STATUS_UNMATCHED -> { statusReference = "unknown-ref"; respond(exchange, 200, statusBody(requestedId, "SUCCEEDED")); }
+                    case STATUS_FAILED -> respond(exchange, 200, statusBody(requestedId, "FAILED"));
+                    case STATUS_EXPIRED -> respond(exchange, 200, statusBody(requestedId, "EXPIRED"));
+                    case STATUS_CANCELED -> respond(exchange, 200, statusBody(requestedId, "CANCELED"));
+                    default -> respond(exchange, 200, statusBody(requestedId, "SUCCEEDED"));
+                }
+                return;
+            }
             byte[] body = exchange.getRequestBody().readAllBytes();
             lastAuth = exchange.getRequestHeaders().getFirst("Authorization");
             lastApiVersion = exchange.getRequestHeaders().getFirst("api-version");
@@ -92,6 +114,14 @@ public final class XenditStub {
         SERVER.start();
     }
 
+    private static String statusBody() {
+        return statusBody(REQUEST_ID, "SUCCEEDED");
+    }
+
+    private static String statusBody(String requestId, String status) {
+        return "{\"id\":\"" + requestId + "\",\"reference_id\":\"" + statusReference + "\",\"status\":\"" + status + "\",\"request_amount\":10000,\"currency\":\"IDR\",\"country\":\"ID\",\"channel_code\":\"QRIS\",\"type\":\"PAY\",\"payment_id\":\"pay-test\"}";
+    }
+
     private static String successBody(String id, String qr) {
         return "{\"id\":\"" + id + "\",\"status\":\"PENDING\",\"actions\":[{\"action\":\"QR_STRING\",\"value\":\"" + qr + "\"}]}";
     }
@@ -115,6 +145,7 @@ public final class XenditStub {
 
     public static void reset(Mode newMode, long orderId, String idempotencyKey, JdbcTemplate template) {
         mode = newMode;
+        statusReference = "nv_pay_1";
         currentOrderId = orderId;
         currentKey = idempotencyKey;
         jdbc = template;

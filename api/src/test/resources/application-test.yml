@@ -9,6 +9,9 @@ spring:
       url: ${REDIS_URL:redis://localhost:6379}
 
 nightvenue:
+  payment:
+    xendit:
+      callback-token: test-callback-token
   auth:
     jwt-secret: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
     access-ttl: PT15M
