@@ -307,6 +307,22 @@ class PaymentReconciliationIntegrationTests {
                 "SELECT result FROM payment_events WHERE payment_id=?", String.class, seeded.id()));
     }
 
+    @Test
+    void paymentRequestIdMismatchResponseNeverMutatesOrSettles() {
+        Seeded seeded = seedEligible("ACCEPTED", "SUCCEEDED");
+        XenditStub.setMode(XenditStub.Mode.STATUS_ID_MISMATCH);
+
+        reconciler.reconcile();
+
+        assertEquals(1, XenditStub.count(), "the Status API GET happened");
+        assertEquals("PENDING", paymentStatus(seeded.id()));
+        assertEquals("ACCEPTED", chargeState(seeded.id()));
+        assertEquals(0, eventCount(seeded.id()));
+        assertEquals(0, jdbc.queryForObject("""
+                SELECT COUNT(*) FROM audit_logs WHERE action='PAYMENT_SETTLED' AND entity_id=?
+                """, Integer.class, seeded.id()));
+    }
+
     // ---------- candidate rules ----------
 
     @Test

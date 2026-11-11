@@ -118,8 +118,20 @@ class XenditClientTests {
     }
 
     @Test
-    void readTimeout_actuallyApplies_transportFailureIsAmbiguous() throws IOException {
-        HttpServer slowServer = HttpServer.create(new InetSocketAddress(0), 0);
+    void statusApi_responseIdDifferentFromRequestedId_isMalformed() {
+        // the stub always answers with id "pr-abc-123"; asking for another id must be MALFORMED,
+        // never VERIFIED, so a mismatched response can never settle a payment
+        XenditClient.VerificationResult result =
+                client("http://localhost:" + port, 2000).getPaymentRequest("pr-requested-1");
+        assertEquals(XenditClient.VerificationKind.MALFORMED, result.kind());
+        assertNull(result.requestId());
+        assertNull(result.referenceId());
+        assertNull(result.status());
+        assertNull(result.amount());
+    }
+
+    @Test
+    void readTimeout_actuallyApplies_transportFailureIsAmbiguous() throws IOException {        HttpServer slowServer = HttpServer.create(new InetSocketAddress(0), 0);
         slowServer.createContext("/v3/payment_requests", exchange -> {
             try {
                 Thread.sleep(700);

@@ -25,7 +25,7 @@ public final class XenditStub {
     public static final String SECRET = "test-secret-not-real";
     public static final int READ_TIMEOUT_MS = 2000;
 
-    public enum Mode { SUCCESS, NO_QR, NO_ID, LONG_ID, VALIDATION, SERVER_500, TIMEOUT, FENCE, FAIL_TX2, BLOCKED, STATUS_SUCCESS, STATUS_404, STATUS_500, STATUS_401, STATUS_403, STATUS_TIMEOUT, STATUS_TIMEOUT_LONG, STATUS_MALFORMED, STATUS_UNMATCHED, STATUS_FAILED, STATUS_EXPIRED, STATUS_CANCELED, STATUS_BLOCKED }
+    public enum Mode { SUCCESS, NO_QR, NO_ID, LONG_ID, VALIDATION, SERVER_500, TIMEOUT, FENCE, FAIL_TX2, BLOCKED, STATUS_SUCCESS, STATUS_404, STATUS_500, STATUS_401, STATUS_403, STATUS_TIMEOUT, STATUS_TIMEOUT_LONG, STATUS_MALFORMED, STATUS_UNMATCHED, STATUS_FAILED, STATUS_EXPIRED, STATUS_CANCELED, STATUS_BLOCKED, STATUS_ID_MISMATCH }
 
     private static final HttpServer SERVER;
     private static final AtomicInteger COUNT = new AtomicInteger();
@@ -69,6 +69,10 @@ public final class XenditStub {
                         try { blockLatch.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
                         respond(exchange, 200, statusBody(requestedId, statusFor(requestedId, "SUCCEEDED")));
                     }
+                    case STATUS_ID_MISMATCH -> respond(exchange, 200,
+                            "{\"id\":\"pr-different\",\"reference_id\":\"" + referenceFor(requestedId)
+                                    + "\",\"status\":\"SUCCEEDED\",\"request_amount\":10000,\"currency\":\"IDR\","
+                                    + "\"country\":\"ID\",\"channel_code\":\"QRIS\",\"type\":\"PAY\",\"payment_id\":\"pay-test\"}");
                     case STATUS_404 -> respond(exchange, 404, "{}");
                     case STATUS_500 -> respond(exchange, 500, "{}");
                     case STATUS_401 -> respond(exchange, 401, "{}");
