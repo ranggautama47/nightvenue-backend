@@ -152,11 +152,7 @@ public class PaymentService {
 
         long paidTotal = payments.sumByStatus(orderId, PaymentStatus.PAID); // excludes PENDING
         boolean fullyPaid = paidTotal >= locked.totalDue();
-        int updated = orders.updatePaidTotalAndStatus(
-                orderId, paidTotal, fullyPaid ? "PAID" : "PARTIALLY_PAID", fullyPaid ? now : null, now);
-        if (updated != 1) {
-            throw new IllegalStateException("Expected to update exactly one open order");
-        }
+        orders.applySettlement(locked, paidTotal, payment.id(), audit, now);
 
         if (fullyPaid && locked.tableId() != null) {
             // Addendum A1: the table was already not OCCUPIED is not an error; never fail a payment on 0 rows

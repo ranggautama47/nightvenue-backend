@@ -125,7 +125,8 @@ public class AuthSecurityConfiguration {
                 .authorizeHttpRequests(requests -> {
                     requests.requestMatchers("/actuator/health", "/actuator/health/**").permitAll();
                     requests.requestMatchers(HttpMethod.POST,
-                            "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout").permitAll();
+                            "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout",
+                            "/api/v1/webhooks/xendit").permitAll();
                     if (openApiPublic) {
                         requests.requestMatchers("/openapi.yaml", "/v3/api-docs/**", "/swagger-ui/**").permitAll();
                     } else {

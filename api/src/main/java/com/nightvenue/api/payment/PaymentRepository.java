@@ -76,6 +76,38 @@ public class PaymentRepository {
                 .stream().findFirst();
     }
 
+    public Optional<Payment> findXenditByReferenceOrRequestId(String referenceId, String requestId) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM payments WHERE provider = 'XENDIT' AND " +
+                        "((? IS NOT NULL AND provider_reference_id = ?) OR (? IS NOT NULL AND provider_request_id = ?))",
+                        PaymentRepository::map, referenceId, referenceId, requestId, requestId)
+                .stream().findFirst();
+    }
+
+    public Optional<Payment> findXenditByReferenceId(String referenceId) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM payments WHERE provider='XENDIT' AND provider_reference_id=?",
+                PaymentRepository::map, referenceId).stream().findFirst();
+    }
+
+    public Optional<Payment> findXenditByRequestId(String requestId) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM payments WHERE provider='XENDIT' AND provider_request_id=?",
+                PaymentRepository::map, requestId).stream().findFirst();
+    }
+
+    /** Settlement CAS; request ID is recovered only with authenticated, verified provider evidence. */
+    public int applyVerifiedStatus(long id, PaymentStatus expected, PaymentStatus next,
+                                  String expectedChargeState, String providerRequestId, Instant now) {
+        return jdbc.update("""
+                UPDATE payments SET status = ?,
+                    provider_request_id = COALESCE(provider_request_id, ?),
+                    charge_state = CASE WHEN charge_state IN ('SENDING','NOT_SENT') THEN 'AMBIGUOUS' ELSE charge_state END,
+                    paid_at = CASE WHEN ? = 'PAID' THEN ? ELSE paid_at END,
+                    version = version + 1, updated_at = ?
+                WHERE id = ? AND status = ? AND charge_state = ?
+                  AND (provider_request_id IS NULL OR ? IS NULL OR provider_request_id = ?)
+                """, next.name(), providerRequestId, next.name(), Timestamp.from(now), Timestamp.from(now),
+                id, expected.name(), expectedChargeState, providerRequestId, providerRequestId);
+    }
+
     public Payment insert(
             long orderId,
             long venueId,

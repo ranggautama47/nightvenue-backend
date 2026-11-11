@@ -22,4 +22,5 @@ public class PaymentEventRepository {
                 ON CONFLICT ON CONSTRAINT uq_payment_events_provider_event DO NOTHING
                 """, paymentId, provider, eventKey, result.name(), payloadSnapshot, Timestamp.from(receivedAt));
     }
+
 }

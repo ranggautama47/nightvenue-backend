@@ -36,6 +36,10 @@ public class XenditClient {
             "INVALID_VALUE_ERROR", "API_VALIDATION_ERROR", "INVALID_PAYMENT_DETAILS");
 
     public enum Outcome { CONFIRMED, REJECTED, AMBIGUOUS }
+    public enum VerificationKind { VERIFIED, NOT_FOUND, TRANSIENT, AUTH_FAILURE, MALFORMED }
+    public record VerificationResult(VerificationKind kind, String requestId, String referenceId,
+                                     String status, Long amount, String currency, String country,
+                                     String channelCode, String type, String paymentId) {}
 
     /**
      * Outcome of one Create attempt. httpStatus is 0 when no HTTP response was
@@ -80,6 +84,39 @@ public class XenditClient {
             log.info("xendit create referenceId={} httpStatus=0 outcome=AMBIGUOUS transportFailure={}",
                     referenceId, e.getClass().getSimpleName());
             return new CreateResult(Outcome.AMBIGUOUS, null, null, 0, null);
+        }
+    }
+
+    public VerificationResult getPaymentRequest(String requestId) {
+        if (!properties.isConfigured()) return new VerificationResult(VerificationKind.AUTH_FAILURE, null,null,null,null,null,null,null,null,null);
+        try {
+            String body = restClient.get().uri("/v3/payment_requests/{id}", requestId)
+                    .header(HttpHeaders.AUTHORIZATION, basicAuth()).header("api-version", properties.getApiVersion())
+                    .retrieve().body(String.class);
+            Map<String,Object> root = mapper.readValue(body, new TypeReference<>() {});
+            String id = stringValue(root.get("id"));
+            String status = stringValue(root.get("status"));
+            String reference = stringValue(root.get("reference_id"));
+            Long amount = numberValue(root.get("request_amount"));
+            String currency = stringValue(root.get("currency"));
+            String country = stringValue(root.get("country"));
+            String channel = stringValue(root.get("channel_code"));
+            String type = stringValue(root.get("type"));
+            if (id == null || !id.equals(requestId) || status == null || reference == null || amount == null
+                    || currency == null || country == null || channel == null || type == null)
+                return new VerificationResult(VerificationKind.MALFORMED,null,null,null,null,null,null,null,null,null);
+            return new VerificationResult(VerificationKind.VERIFIED,id,reference,status,amount,
+                    currency,country,channel,type,stringValue(root.get("payment_id")));
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value() == 404) return new VerificationResult(VerificationKind.NOT_FOUND,null,null,null,null,null,null,null,null,null);
+            if (e.getStatusCode().value() == 401 || e.getStatusCode().value() == 403) return new VerificationResult(VerificationKind.AUTH_FAILURE,null,null,null,null,null,null,null,null,null);
+            return new VerificationResult(VerificationKind.TRANSIENT,null,null,null,null,null,null,null,null,null);
+        } catch (tools.jackson.core.JacksonException e) {
+            return new VerificationResult(VerificationKind.MALFORMED,null,null,null,null,null,null,null,null,null);
+        } catch (RestClientException e) {
+            return new VerificationResult(VerificationKind.TRANSIENT,null,null,null,null,null,null,null,null,null);
+        } catch (Exception e) {
+            return new VerificationResult(VerificationKind.MALFORMED,null,null,null,null,null,null,null,null,null);
         }
     }
 
@@ -189,5 +226,10 @@ public class XenditClient {
 
     private static String stringValue(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    private static Long numberValue(Object value) {
+        try { return value == null ? null : new java.math.BigDecimal(String.valueOf(value)).longValueExact(); }
+        catch (NumberFormatException | ArithmeticException ignored) { return null; }
     }
 }

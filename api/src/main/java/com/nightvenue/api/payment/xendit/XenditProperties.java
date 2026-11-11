@@ -14,6 +14,7 @@ public class XenditProperties {
     private String apiVersion = "2024-11-11";
     private int connectTimeoutMs = 5_000;
     private int readTimeoutMs = 10_000;
+    private String callbackToken = "";
 
     public String getSecretKey() {
         return secretKey;
@@ -58,4 +59,7 @@ public class XenditProperties {
     public boolean isConfigured() {
         return secretKey != null && !secretKey.isBlank();
     }
+
+    public String getCallbackToken() { return callbackToken; }
+    public void setCallbackToken(String callbackToken) { this.callbackToken = callbackToken; }
 }

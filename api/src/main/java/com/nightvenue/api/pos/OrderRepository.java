@@ -200,6 +200,20 @@ public class OrderRepository {
                 Timestamp.from(updatedAt), id);
     }
 
+    public void applySettlement(Order locked, long paidTotal, long paymentId,
+                                OrderAuditWriter audit, Instant now) {
+        if ("VOIDED".equals(locked.status())) {
+            audit.anomaly(locked.venueId(), "PAYMENT_ON_CLOSED_ORDER", "PAYMENT", paymentId,
+                    java.util.Map.of("order_id", locked.id()), now);
+            return;
+        }
+        if (!"OPEN".equals(locked.status()) && !"PARTIALLY_PAID".equals(locked.status())) return;
+        boolean fullyPaid = paidTotal >= locked.totalDue();
+        int changed = updatePaidTotalAndStatus(locked.id(), paidTotal,
+                fullyPaid ? "PAID" : "PARTIALLY_PAID", fullyPaid ? now : null, now);
+        if (changed != 1) throw new IllegalStateException("Expected to update one payable order");
+    }
+
     private static Order mapOrder(java.sql.ResultSet rs, int row) throws java.sql.SQLException {
         Timestamp closedAt = rs.getTimestamp("closed_at");
         return new Order(
