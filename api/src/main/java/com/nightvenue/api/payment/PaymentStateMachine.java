@@ -4,7 +4,8 @@ public final class PaymentStateMachine {
     private PaymentStateMachine() {}
 
     public static PaymentStatus initialStatus(PaymentMethod method) {
-        return method == PaymentMethod.QRIS_MIDTRANS ? PaymentStatus.PENDING : PaymentStatus.PAID;
+        return (method == PaymentMethod.QRIS_MIDTRANS || method == PaymentMethod.QRIS)
+                ? PaymentStatus.PENDING : PaymentStatus.PAID;
     }
 
     public static boolean canTransition(

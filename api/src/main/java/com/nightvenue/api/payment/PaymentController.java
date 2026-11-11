@@ -3,6 +3,7 @@ package com.nightvenue.api.payment;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -20,20 +21,27 @@ import java.util.UUID;
 @RequestMapping("/api/v1/orders/{orderId}")
 public class PaymentController {
     private final PaymentService payments;
+    private final QrisPaymentCreator qrisPayments;
 
-    public PaymentController(PaymentService payments) {
+    public PaymentController(PaymentService payments, QrisPaymentCreator qrisPayments) {
         this.payments = payments;
+        this.qrisPayments = qrisPayments;
     }
 
     @PostMapping("/payments")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     @ResponseStatus(HttpStatus.CREATED)
-    public PaymentWithOrder createPayment(
+    public ResponseEntity<?> createPayment(
             @PathVariable @Positive long orderId,
             @Valid @RequestBody PaymentRequest request,
             // A4: missing or non-UUID header fails bean/type validation -> 400 before the service runs
             @RequestHeader("Idempotency-Key") UUID idempotencyKey,
             @AuthenticationPrincipal Jwt jwt) {
-        return payments.createPayment(orderId, request, idempotencyKey, jwt.getSubject());
+        if (request.method() == PaymentMethod.QRIS) {
+            // QRIS follows TX1 -> external call -> TX2; must not run inside PaymentService's @Transactional
+            return qrisPayments.create(orderId, request.amount(), request.referenceNote(), idempotencyKey, jwt.getSubject());
+        }
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(payments.createPayment(orderId, request, idempotencyKey, jwt.getSubject()));
     }
 }

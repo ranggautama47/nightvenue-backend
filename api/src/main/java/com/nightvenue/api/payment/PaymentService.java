@@ -198,7 +198,8 @@ public class PaymentService {
         return normalized.isEmpty() ? null : normalized;
     }
 
-    private static String sha256Hex(String input) {
+    /** shared with the QRIS create flow (same package) for identical request hashing */
+    static String sha256Hex(String input) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));

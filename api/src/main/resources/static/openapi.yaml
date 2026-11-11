@@ -135,26 +135,36 @@ paths:
               schema: { $ref: "#/components/schemas/Problem" }
   /orders/{orderId}/payments:
     post:
-      summary: Record a CASH or CARD_EDC payment against an order
+      summary: Record a payment against an order (CASH, CARD_EDC, or Xendit QRIS)
       description: |
-        Roles: ADMIN, MANAGER, CASHIER; CUSTOMER is forbidden. M2 accepts only
-        CASH and CARD_EDC; QRIS_MIDTRANS is rejected with 422
-        PAYMENT_METHOD_NOT_SUPPORTED.
+        Roles: ADMIN, MANAGER, CASHIER; CUSTOMER is forbidden. Accepts CASH,
+        CARD_EDC and QRIS. QRIS routes to the Xendit Payment Requests v3 API
+        (QRIS_MIDTRANS is legacy, read-only, and rejected with 422
+        PAYMENT_METHOD_NOT_SUPPORTED).
+
+        QRIS flow: TX1 persists a PENDING/SENDING payment with a unique
+        provider_reference_id, the provider is called OUTSIDE any database
+        transaction or row lock, then TX2 finalizes. Outcomes: 201 confirmed
+        QR (status PENDING, never PAID), 202 pending/ambiguous (no QR;
+        includes provider timeouts, 5xx and unreadable responses), 422 provider
+        validation rejection. A blank Xendit secret answers 503
+        PROVIDER_NOT_CONFIGURED before anything is persisted. Automatic Create
+        retries are never issued.
 
         Requires an active CASHIER/ADMIN/MANAGER OPEN shift for CASH (409
         SHIFT_NOT_OPEN when missing, stale for the order venue, or owned by
-        someone else); CARD_EDC needs no shift. The payment business date is
+        someone else); CARD_EDC and QRIS need no shift. The payment business date is
         the business date at payment creation (order venue timezone/cutoff).
         amount must not exceed the outstanding balance (total_due minus the sum
         of PAID and PENDING payments, 422 otherwise). When the payment
         exhausts the remaining balance and base (subtotal minus
         discount_amount) is below minimum_spend_snapshot, 422
-        MINIMUM_SPEND_NOT_MET is returned; a partial payment that does not
-        exhaust the balance is allowed.
+        MINIMUM_SPEND_NOT_MET is returned for CASH/CARD_EDC; a partial payment
+        that does not exhaust the balance is allowed.
 
-        Same key + same hash replays the stored 201 snapshot without creating
-        a payment; same key + different payload returns 422. A failed request
-        rolls the reservation back so the key can be reused.
+        Same key + same payload replays the stored snapshot without a second
+        effect; same key + different payload returns 422. A key between TX1
+        and TX2 (in flight) returns 409 PAYMENT_IN_PROGRESS with Retry-After.
       security:
         - bearerAuth: []
       parameters:
@@ -173,10 +183,26 @@ paths:
             schema: { $ref: "#/components/schemas/PaymentCreateRequest" }
       responses:
         "201":
-          description: Payment recorded; replay of the same key+hash returns this snapshot again
+          description: |
+            Payment recorded. CASH/CARD_EDC return PaymentCreated; a confirmed
+            QRIS create returns QrisPaymentView with qrString (status PENDING,
+            never PAID). Replay of the same key+payload returns the stored
+            snapshot with the original status code and body.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/PaymentCreated" }
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/PaymentCreated"
+                  - $ref: "#/components/schemas/QrisPaymentView"
+        "202":
+          description: |
+            QRIS create outcome unknown or pending (provider timeout, 5xx,
+            unreadable body, 2xx without a usable QR action). The payment is
+            AMBIGUOUS and PENDING; qrString is null. The reservation is held;
+            replay returns this snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QrisPaymentView" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
@@ -194,7 +220,10 @@ paths:
             Order is not OPEN or PARTIALLY_PAID, or (CASH) SHIFT_NOT_OPEN:
             no or not the caller's OPEN shift, wrong venue, or business date
             not equal to the current business date of the order venue. The
-            payment endpoint never mutates a shift.
+            payment endpoint never mutates a shift. For QRIS additionally:
+            PAYMENT_IN_PROGRESS (key in flight between TX1 and TX2, with
+            Retry-After: 3) and PAYMENT_STATE_CONFLICT (the payment row was
+            fenced: it moved off SENDING before finalization).
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
@@ -202,7 +231,20 @@ paths:
           description: |
             PAYMENT_METHOD_NOT_SUPPORTED (QRIS_MIDTRANS), amount exceeds
             outstanding balance, MINIMUM_SPEND_NOT_MET, or Idempotency-Key
-            reused with a different payload (BusinessRuleViolation).
+            reused with a different payload (BusinessRuleViolation). For QRIS
+            a provider validation rejection (documented 400 error codes) also
+            answers 422 with a QrisPaymentView body (REJECTED + FAILED,
+            qrString null) and the X-Error-Code: PAYMENT_PROVIDER_REJECTED
+            header; the reservation is released.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QrisPaymentView" }
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "503":
+          description: |
+            PROVIDER_NOT_CONFIGURED: the Xendit secret is blank. No idempotency
+            row, no payment row and no provider request is created.
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
@@ -422,7 +464,7 @@ components:
       type: object
       required: [method, amount]
       properties:
-        method: { type: string, enum: [CASH, CARD_EDC, QRIS_MIDTRANS], description: QRIS_MIDTRANS is rejected with 422 on this endpoint }
+        method: { type: string, enum: [CASH, CARD_EDC, QRIS], description: QRIS routes to the Xendit provider; QRIS_MIDTRANS is legacy, read-only, and rejected with 422 on any create request }
         amount: { type: integer, format: int64, minimum: 1 }
         referenceNote: { type: [string, "null"], maxLength: 100, description: Trimmed before hashing and storage; null/empty/whitespace-only is stored as null; a literal "-" stays "-" }
     Payment:
@@ -497,6 +539,31 @@ components:
       properties:
         payment: { $ref: "#/components/schemas/Payment" }
         order: { $ref: "#/components/schemas/OrderSnapshot" }
+    QrisPaymentView:
+      type: object
+      description: |
+        QRIS create response: the PaymentView field set plus a nullable qrString
+        (non-null only on a confirmed 201). No provider identifiers or charge
+        orchestration fields are exposed. Whether GET /payments/{id} may return
+        the QR is an open PM decision and is not implemented yet.
+      required: [id, orderId, venueId, businessDate, shiftId, method, amount, status, expiresAt, referenceNote, paidAt, createdBy, createdAt, updatedAt, version, qrString]
+      properties:
+        id: { type: integer, format: int64 }
+        orderId: { type: integer, format: int64 }
+        venueId: { type: integer, format: int64 }
+        businessDate: { type: string, format: date }
+        shiftId: { type: [integer, "null"], format: int64 }
+        method: { type: string, enum: [QRIS] }
+        amount: { type: integer, format: int64, minimum: 1 }
+        status: { type: string, enum: [PENDING, FAILED], description: A confirmed create is PENDING, never PAID; settlement is a separate concern (M4) }
+        expiresAt: { type: [string, "null"], format: date-time }
+        referenceNote: { type: [string, "null"], maxLength: 100 }
+        paidAt: { type: [string, "null"], format: date-time }
+        createdBy: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64 }
+        qrString: { type: [string, "null"], description: Raw QRIS EMVCo QR string; null on 202 and 422 }
     VoidedItem:
       type: object
       required: [id, orderId, productId, itemType, productNameSnapshot, unitPriceSnapshot, quantity, lineTotal, status, createdAt, updatedAt, disposition]
