@@ -4,5 +4,6 @@ public enum ChargeState {
     NOT_SENT,
     SENDING,
     ACCEPTED,
-    REJECTED
+    REJECTED,
+    AMBIGUOUS
 }

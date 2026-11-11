@@ -25,6 +25,13 @@ spring:
 nightvenue:
   seed:
     enabled: false
+  payment:
+    xendit:
+      secret-key: ${XENDIT_SECRET_KEY:}
+      base-url: ${XENDIT_BASE_URL:https://api.xendit.co}
+      api-version: ${XENDIT_API_VERSION:2024-11-11}
+      connect-timeout-ms: ${XENDIT_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${XENDIT_READ_TIMEOUT_MS:10000}
   cache:
     menu:
       ttl: ${NIGHTVENUE_CACHE_MENU_TTL:PT5M}
