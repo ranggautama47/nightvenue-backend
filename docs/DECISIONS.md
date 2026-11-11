@@ -499,6 +499,14 @@ The Phase 6 documentation currently contains Midtrans-specific behavior that mus
 ### Consequences
 The approved commit order is M3-A only, then V9 plus `PaymentSchemaMigrationTests`, then documentation and `.env.example`. Full regression must pass before commits; preserve unrelated worktree changes, do not stage unrelated files, and do not push to main.
 
+### PM Decision Addendum — M4-A (approved)
+
+- The V8 `payment_events.payment_id NOT NULL` contract remains unchanged. After callback authentication and successful Status API verification, a genuinely unmatched callback is acknowledged with HTTP 200, creates no event/payment/order row, and emits a sanitized warning. No V10 migration is authorized for unmatched events.
+- A locally terminal `FAILED`, `EXPIRED`, or `CANCELLED` payment never transitions to `PAID` in M4-A, even when Xendit reports `SUCCEEDED`. Record a linked `REJECTED` event, an anomaly, and a sanitized manual-review warning. Do not change `PaymentStateMachine`.
+- Authenticated, correlated, Status-API-verified `SUCCEEDED` may recover `SENDING`/`NOT_SENT` to `status=PAID`, `charge_state=AMBIGUOUS`, and the verified request ID in one conditional update. The reference, request ID, amount, currency, country, type, channel, and provider status must match; never force `ACCEPTED`.
+- Status API 404, timeout, connection errors, 5xx, 401/403, or malformed responses cause HTTP 503 and no event/payment mutation. 404 never means payment failure or expiry.
+- M4-A handles documented `payment.capture` and `payment.failure` payloads under top-level `event` and nested `data`. Do not infer `payment_request.expiry` fields; defer it to M4-B reconciliation.
+
 ---
 
 ## Changelog v2.1 (semantic audit PM)
