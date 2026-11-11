@@ -93,6 +93,39 @@ public class PaymentRepository {
                 PaymentRepository::map, requestId).stream().findFirst();
     }
 
+    /**
+     * M4-B candidates: Xendit QRIS rows that are still PENDING with a known,
+     * queryable payment request id, older than the cutoff. Ids only: the caller
+     * must not hold a transaction or row lock while calling the Status API.
+     * Oldest first, then id, so ordering is deterministic.
+     */
+    public List<Long> findXenditReconciliationCandidates(Instant olderThan, int limit) {
+        return jdbc.queryForList("""
+                SELECT id FROM payments
+                WHERE provider = 'XENDIT' AND method = 'QRIS' AND status = 'PENDING'
+                  AND charge_state IN ('ACCEPTED', 'AMBIGUOUS')
+                  AND provider_request_id IS NOT NULL
+                  AND charge_started_at IS NOT NULL
+                  AND charge_started_at < ?
+                ORDER BY charge_started_at ASC, id ASC
+                LIMIT ?
+                """, Long.class, Timestamp.from(olderThan), limit);
+    }
+
+    /**
+     * PENDING Xendit QRIS rows that cannot be checked through the Status API:
+     * SENDING/NOT_SENT (the provider may not know them yet) or a missing
+     * payment_request_id. Never mutated by reconciliation; counted for manual review.
+     */
+    public List<Long> findXenditUnqueryablePending() {
+        return jdbc.queryForList("""
+                SELECT id FROM payments
+                WHERE provider = 'XENDIT' AND method = 'QRIS' AND status = 'PENDING'
+                  AND (charge_state IN ('SENDING', 'NOT_SENT') OR provider_request_id IS NULL)
+                ORDER BY id ASC
+                """, Long.class);
+    }
+
     /** Settlement CAS; request ID is recovered only with authenticated, verified provider evidence. */
     public int applyVerifiedStatus(long id, PaymentStatus expected, PaymentStatus next,
                                   String expectedChargeState, String providerRequestId, Instant now) {
