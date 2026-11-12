@@ -520,6 +520,219 @@ The approved commit order is M3-A only, then V9 plus `PaymentSchemaMigrationTest
 
 ---
 
+## ADR-023 — Runbook operasional: diagnostik read-only untuk payment QRIS Xendit yang belum tuntas (M5-C, approved)
+
+### Konteks
+
+M4-A/M4-B (settlement + reconciliation) dan M5-A/M5-B meninggalkan beberapa kategori baris
+payment yang belum tuntas (SENDING, AMBIGUOUS tanpa request id, key idempotency in-flight).
+Keputusan ini mendokumentasikan diagnostik **read-only** untuk operator. Semua query di bawah
+telah diverifikasi terhadap V4/V6/V8/V9 dan dieksekusi pada PostgreSQL Testcontainers oleh
+`PaymentRunbookQueriesIntegrationTests` (SQL di file ini identik dengan SQL yang dijalankan test).
+Tidak ada pernyataan UPDATE/DELETE/INSERT operasional di runbook ini.
+
+### Fakta schema/source yang menjadi dasar (terverifikasi)
+
+- Predikat "active payment" = `status IN ('PENDING','PAID')` — persis
+  `PaymentRepository.sumActiveByOrder()` (PaymentRepository.java:60-67) dan
+  `existsActiveByOrder()` (PaymentRepository.java:42-49).
+- BR-28: outstanding = `orders.total_due - sumActiveByOrder(orderId)` (QrisCreateTransactions.java:110-113).
+- BR-20: `voidOrder` menolak VOID bila `existsActiveByOrder(orderId)` true, sambil memegang lock
+  order, sebelum gerbang status OPEN (OrderLifecycleService.java:87-92).
+- `payments.amount BIGINT`, `orders.total_due BIGINT`, `orders.paid_total BIGINT` (V8:27, V6:16-17).
+- `payments.charge_state`, `payments.charge_started_at`, `payments.provider_request_id` (V8:33-34; V9 menambah
+  `provider_reference_id`, `provider_request_id VARCHAR(39)`, `qr_payload`).
+- `ck_payments_charge_started` (V8:61-63) hanya mewajibkan `charge_started_at` NOT NULL untuk
+  `SENDING`; baris `NOT_SENT` boleh memiliki `charge_started_at` NULL — karena itu Q1/Q2
+  memakai `(charge_started_at IS NULL OR charge_started_at < ?)`.
+- `idempotency_keys`: `response_status INT` nullable, `created_at TIMESTAMPTZ NOT NULL` (V4:29-38)
+  → diagnostik usia in-flight key didukung schema.
+- **Tidak ada** job cleanup idempotency di production source; hanya komentar "eligible for cleanup
+  ... deferred" (IdempotencyRepository.java:15-17). Key in-flight bisa bertahan tanpa batas waktu.
+- Kandidat reconciliation = Q3, mirror persis `findXenditReconciliationCandidates()`
+  (PaymentRepository.java:102-112). Scheduler default `enabled=false` (PaymentReconciliationProperties.java:18-34);
+  mengaktifkannya adalah keputusan operasional terpisah. Provider `CANCELED` = no-op dengan
+  warning tersanitasi (PaymentReconciliationService.java:114-118).
+
+### Q1 — Stuck SENDING / NOT_SENT
+
+```sql
+-- Q1: Xendit QRIS rows stuck in SENDING / NOT_SENT (threshold = now - min_age)
+SELECT id, charge_state, charge_started_at, provider_reference_id
+FROM payments
+WHERE provider = 'XENDIT'
+  AND method = 'QRIS'
+  AND status = 'PENDING'
+  AND charge_state IN ('SENDING', 'NOT_SENT')
+  AND (charge_started_at IS NULL OR charge_started_at < ?)
+ORDER BY charge_started_at ASC NULLS LAST, id ASC;
+```
+
+Baris ini tidak selectable oleh reconciliation (Status API tidak bisa dipanggil tanpa
+`provider_request_id`; `findXenditReconciliationCandidates` mengecualikan SENDING/NOT_SENT).
+Recovery via webhook hanya mungkin bila provider benar-benar membuat Payment Request dan
+callback membawa `reference_id` yang berkorelasi (`nv_pay_<id>`). Dari state DB saja, baris
+tidak dapat diklasifikasikan aman sebagai "belum dibayar": provider mungkin sudah membuat
+request (read timeout) atau belum (connect failure) — M5-B membuktikan keduanya menghasilkan
+state DB yang sama.
+
+### Q2 — AMBIGUOUS tanpa provider_request_id
+
+```sql
+-- Q2: Xendit QRIS AMBIGUOUS rows without provider_request_id (threshold = now - min_age)
+SELECT id, charge_state, charge_started_at, provider_reference_id
+FROM payments
+WHERE provider = 'XENDIT'
+  AND method = 'QRIS'
+  AND status = 'PENDING'
+  AND charge_state = 'AMBIGUOUS'
+  AND provider_request_id IS NULL
+  AND (charge_started_at IS NULL OR charge_started_at < ?)
+ORDER BY charge_started_at ASC NULLS LAST, id ASC;
+```
+
+Reconciliation tidak dapat memquery baris ini — mengaktifkan reconciliation TIDAK membantu.
+Connect failure dan read timeout tidak dapat dibedakan dari state tersimpan (keduanya
+menghasilkan AMBIGUOUS tanpa request id). Recovery via webhook bersifat kondisional: butuh
+callback asli dari provider yang membawa `reference_id` yang dapat dipakai dan lolos verifikasi
+Status API. Bila tidak ada webhook, TIDAK ada prosedur release otomatis yang disetujui.
+
+### Q3 — Kandidat reconciliation (semantik persis source)
+
+```sql
+-- Q3: reconciliation candidates (exact mirror of PaymentRepository.findXenditReconciliationCandidates)
+SELECT id
+FROM payments
+WHERE provider = 'XENDIT'
+  AND method = 'QRIS'
+  AND status = 'PENDING'
+  AND charge_state IN ('ACCEPTED', 'AMBIGUOUS')
+  AND provider_request_id IS NOT NULL
+  AND charge_started_at IS NOT NULL
+  AND charge_started_at < ?
+ORDER BY charge_started_at ASC, id ASC
+LIMIT ?;
+```
+
+Jangan disederhanakan atau diperluas. Scheduler tidak jalan kecuali `enabled=true`; itu
+keputusan aktivasi operasional terpisah, bukan default.
+
+### Q4 — Order dengan reservasi payment aktif (BR-28 / BR-20)
+
+```sql
+-- Q4: order totals, active payment reservations (BR-28) and unresolved Xendit rows (BR-20)
+SELECT o.id AS order_id,
+       o.venue_id,
+       o.status AS order_status,
+       o.total_due,
+       o.paid_total,
+       COALESCE(a.active_total, 0) AS active_reservation_total,
+       o.total_due - COALESCE(a.active_total, 0) AS outstanding_amount,
+       COALESCE(x.unresolved_xendit, '') AS unresolved_xendit_payments
+FROM orders o
+LEFT JOIN LATERAL (
+    SELECT COALESCE(SUM(amount), 0) AS active_total
+    FROM payments
+    WHERE payments.order_id = o.id
+      AND payments.status IN ('PENDING', 'PAID')
+) a ON TRUE
+LEFT JOIN LATERAL (
+    SELECT string_agg(p.id::text || ':' || p.charge_state, ', ' ORDER BY p.id) AS unresolved_xendit
+    FROM payments p
+    WHERE p.order_id = o.id
+      AND p.provider = 'XENDIT'
+      AND p.method = 'QRIS'
+      AND p.status = 'PENDING'
+) x ON TRUE
+WHERE o.venue_id = ?
+ORDER BY o.id ASC;
+```
+
+`active_reservation_total` memakai predikat persis `sumActiveByOrder()` — jangan mengartikan
+"reservasi aktif" secara berbeda. Baris PENDING Xendit yang belum tuntas (Q1/Q2) ikut
+memasukkan `active_reservation_total`: itu yang membuat sisa balance berkurang (BR-28) dan
+`existsActiveByOrder` true sehingga BR-20 memblokir VOID. `unresolved_xendit_payments`
+berformat `<payment_id>:<charge_state>`.
+
+### Q5 — Idempotency key in-flight
+
+```sql
+-- Q5: in-flight idempotency keys (response_status IS NULL, threshold = now - min_age)
+SELECT key, scope, user_id, request_hash, created_at
+FROM idempotency_keys
+WHERE response_status IS NULL
+  AND created_at < ?
+ORDER BY created_at ASC;
+```
+
+Kolom `created_at` ada (V4), jadi diagnostik usia valid. **Tidak ada** job cleanup yang
+berjalan; komentar 24-hour cleanup eligibility (IdempotencyRepository.java:15-17) hanya
+dokumentasi deferral. Key in-flight bisa tetap unresolved tanpa batas waktu sampai mekanisme
+recovery yang disetujui ada (M5-B: CAS-fence dan kegagalan TX2 internal meninggalkan key
+in-flight permanen).
+
+### Q6 — Kandidat queryable untuk verifikasi provider (CANCELED)
+
+```sql
+-- Q6: queryable PENDING Xendit candidates for read-only provider Status API verification
+SELECT id, provider_request_id, charge_started_at, charge_state
+FROM payments
+WHERE provider = 'XENDIT'
+  AND method = 'QRIS'
+  AND status = 'PENDING'
+  AND charge_state IN ('ACCEPTED', 'AMBIGUOUS')
+  AND provider_request_id IS NOT NULL
+  AND charge_started_at IS NOT NULL
+  AND charge_started_at < ?
+ORDER BY charge_started_at ASC, id ASC
+LIMIT ?;
+```
+
+PENTING: `CANCELED` adalah hasil dari Status API provider, bukan state yang bisa disimpulkan
+dari baris PENDING lokal. Query ini hanya menyediakan daftar kandidat yang bisa diverifikasi
+read-only ke provider. Kebijakan reconciliation saat ini memperlakukan provider CANCELED
+sebagai no-op dengan warning tersanitasi (satu per siklus, PaymentReconciliationService.java:114-118):
+payment lokal tetap PENDING, reservasi tetap terpegang, BR-20 dapat terus memblokir VOID,
+dan tidak ada prosedur release lokal yang disetujui. Jangan merekomendasikan mutasi manual
+ke CANCELLED.
+
+### Batas recovery (wajib dibaca operator)
+
+- Baris dengan `provider_request_id`: dapat dipulihkan oleh webhook terautentikasi dengan
+  verifikasi Status API independen, atau oleh reconciliation bila diaktifkan dan memenuhi
+  kriteria kandidat. Reconciliation tidak aktif secara default — itu keputusan aktivasi terpisah.
+- Baris tanpa `provider_request_id`: tidak bisa diambil lewat query GET-by-request-id yang
+  diimplementasikan. Recovery webhook bersifat kondisional (provider harus benar-benar membuat
+  request dan mengirim callback dengan `reference_id` yang dapat dipakai) dan TIDAK dijamin.
+- Kegagalan TX2 setelah provider konfirmasi: TX2 dapat rollback sehingga baris kembali
+  SENDING/PENDING tanpa `provider_request_id` dan tanpa `qr_payload`; klien bisa jadi tidak
+  pernah menerima QR. Meski recovery via callback secara teoretis mungkin, TIDAK ada jalur
+  pembayaran pelanggan yang terjamin ketika QR tidak pernah diterima. Jangan disebut reliably
+  recoverable.
+- Fencing 409: klien bisa menerima 409 PAYMENT_STATE_CONFLICT padahal webhook sudah men-settle;
+  key yang sama bisa terus mengembalikan 409 PAYMENT_IN_PROGRESS sampai ada mekanisme
+  cleanup/recovery yang disetujui. Operator wajib memeriksa baris payment aktual sebelum
+  menyarankan retry, dan TIDAK boleh menyuruh klien membuat Idempotency-Key baru sebelum
+  status payment diperiksa.
+- Respons provider 401/403 saat ini diklasifikasikan AMBIGUOUS. Apakah penolakan autentikasi
+  membuktikan tidak ada request dibuat masih UNVERIFIED, menunggu investigasi sandbox yang
+  disetujui. Jangan reklasifikasi di tugas ini.
+
+### Operasi yang dilarang (semua kategori di atas)
+
+- UPDATE langsung ke `payments.status` atau `payments.charge_state`.
+- Mengisi `provider_request_id` atau `qr_payload` secara manual.
+- Menandai payment PAID, FAILED, EXPIRED, atau CANCELLED secara manual.
+- Me-release order/meja dengan melewati BR-20.
+- Settlement manual di luar `XenditWebhookService` / `PaymentReconciliationService`.
+
+UPDATE manual ke PAID dapat membuat `orders.paid_total`, status order, rekaman audit
+(`PAYMENT_SETTLED`), dan release meja tidak konsisten. Untuk baris yang belum tuntas, aksi
+yang disetujui saat ini adalah eskalasi ke owner/PM untuk investigasi; tidak ada prosedur
+release otomatis yang disetujui.
+
+---
+
 ## Changelog v2.1 (semantic audit PM)
 
 | # | Perubahan | Lokasi |
