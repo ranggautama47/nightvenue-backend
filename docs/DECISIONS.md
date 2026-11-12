@@ -544,7 +544,7 @@ Tidak ada pernyataan UPDATE/DELETE/INSERT operasional di runbook ini.
   `provider_reference_id`, `provider_request_id VARCHAR(39)`, `qr_payload`).
 - `ck_payments_charge_started` (V8:61-63) hanya mewajibkan `charge_started_at` NOT NULL untuk
   `SENDING`; baris `NOT_SENT` boleh memiliki `charge_started_at` NULL — karena itu Q1/Q2
-  memakai `(charge_started_at IS NULL OR charge_started_at < ?)`.
+  memakai `(charge_started_at IS NULL OR charge_started_at < now() - interval '1 hour')`.
 - `idempotency_keys`: `response_status INT` nullable, `created_at TIMESTAMPTZ NOT NULL` (V4:29-38)
   → diagnostik usia in-flight key didukung schema.
 - **Tidak ada** job cleanup idempotency di production source; hanya komentar "eligible for cleanup
@@ -564,10 +564,11 @@ WHERE provider = 'XENDIT'
   AND method = 'QRIS'
   AND status = 'PENDING'
   AND charge_state IN ('SENDING', 'NOT_SENT')
-  AND (charge_started_at IS NULL OR charge_started_at < ?)
+  AND (charge_started_at IS NULL OR charge_started_at < now() - interval '1 hour')
 ORDER BY charge_started_at ASC NULLS LAST, id ASC;
 ```
 
+Catatan: operator dapat menyesuaikan interval waktu (default minAge reconciliation adalah 1 jam / PT1H).
 Baris ini tidak selectable oleh reconciliation (Status API tidak bisa dipanggil tanpa
 `provider_request_id`; `findXenditReconciliationCandidates` mengecualikan SENDING/NOT_SENT).
 Recovery via webhook hanya mungkin bila provider benar-benar membuat Payment Request dan
@@ -587,7 +588,7 @@ WHERE provider = 'XENDIT'
   AND status = 'PENDING'
   AND charge_state = 'AMBIGUOUS'
   AND provider_request_id IS NULL
-  AND (charge_started_at IS NULL OR charge_started_at < ?)
+  AND (charge_started_at IS NULL OR charge_started_at < now() - interval '1 hour')
 ORDER BY charge_started_at ASC NULLS LAST, id ASC;
 ```
 
@@ -609,9 +610,9 @@ WHERE provider = 'XENDIT'
   AND charge_state IN ('ACCEPTED', 'AMBIGUOUS')
   AND provider_request_id IS NOT NULL
   AND charge_started_at IS NOT NULL
-  AND charge_started_at < ?
+  AND charge_started_at < now() - interval '1 hour'
 ORDER BY charge_started_at ASC, id ASC
-LIMIT ?;
+LIMIT 50;
 ```
 
 Jangan disederhanakan atau diperluas. Scheduler tidak jalan kecuali `enabled=true`; itu
@@ -630,29 +631,28 @@ SELECT o.id AS order_id,
        o.total_due - COALESCE(a.active_total, 0) AS outstanding_amount,
        COALESCE(x.unresolved_xendit, '') AS unresolved_xendit_payments
 FROM orders o
-LEFT JOIN LATERAL (
-    SELECT COALESCE(SUM(amount), 0) AS active_total
+LEFT JOIN (
+    SELECT order_id, SUM(amount) AS active_total
     FROM payments
-    WHERE payments.order_id = o.id
-      AND payments.status IN ('PENDING', 'PAID')
-) a ON TRUE
-LEFT JOIN LATERAL (
-    SELECT string_agg(p.id::text || ':' || p.charge_state, ', ' ORDER BY p.id) AS unresolved_xendit
-    FROM payments p
-    WHERE p.order_id = o.id
-      AND p.provider = 'XENDIT'
-      AND p.method = 'QRIS'
-      AND p.status = 'PENDING'
-) x ON TRUE
-WHERE o.venue_id = ?
+    WHERE status IN ('PENDING', 'PAID')
+    GROUP BY order_id
+) a ON a.order_id = o.id
+LEFT JOIN (
+    SELECT order_id, string_agg(id::text || ':' || charge_state, ', ' ORDER BY id) AS unresolved_xendit
+    FROM payments
+    WHERE provider = 'XENDIT'
+      AND method = 'QRIS'
+      AND status = 'PENDING'
+    GROUP BY order_id
+) x ON x.order_id = o.id
 ORDER BY o.id ASC;
 ```
 
-`active_reservation_total` memakai predikat persis `sumActiveByOrder()` — jangan mengartikan
+`active_reservation_total` memakai predikat persis `sumActiveByOrder()` (`PaymentRepository.java:60-67`) — jangan mengartikan
 "reservasi aktif" secara berbeda. Baris PENDING Xendit yang belum tuntas (Q1/Q2) ikut
 memasukkan `active_reservation_total`: itu yang membuat sisa balance berkurang (BR-28) dan
 `existsActiveByOrder` true sehingga BR-20 memblokir VOID. `unresolved_xendit_payments`
-berformat `<payment_id>:<charge_state>`.
+berformat `<payment_id>:<charge_state>` (diurutkan berdasarkan payment ID).
 
 ### Q5 — Idempotency key in-flight
 
@@ -661,7 +661,7 @@ berformat `<payment_id>:<charge_state>`.
 SELECT key, scope, user_id, request_hash, created_at
 FROM idempotency_keys
 WHERE response_status IS NULL
-  AND created_at < ?
+  AND created_at < now() - interval '1 hour'
 ORDER BY created_at ASC;
 ```
 
@@ -675,17 +675,14 @@ in-flight permanen).
 
 ```sql
 -- Q6: queryable PENDING Xendit candidates for read-only provider Status API verification
+-- Note: Provider CANCELED is only visible through the provider Status API, not through this query.
 SELECT id, provider_request_id, charge_started_at, charge_state
 FROM payments
 WHERE provider = 'XENDIT'
   AND method = 'QRIS'
   AND status = 'PENDING'
-  AND charge_state IN ('ACCEPTED', 'AMBIGUOUS')
   AND provider_request_id IS NOT NULL
-  AND charge_started_at IS NOT NULL
-  AND charge_started_at < ?
-ORDER BY charge_started_at ASC, id ASC
-LIMIT ?;
+ORDER BY charge_started_at ASC NULLS LAST, id ASC;
 ```
 
 PENTING: `CANCELED` adalah hasil dari Status API provider, bukan state yang bisa disimpulkan
