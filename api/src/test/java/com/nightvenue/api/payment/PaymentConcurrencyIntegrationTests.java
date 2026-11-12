@@ -521,7 +521,6 @@ class PaymentConcurrencyIntegrationTests {
         UUID k1 = key();
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
-        Connection unused = null;
         try {
             Future<MvcResult> create = executor.submit((Callable<MvcResult>) () ->
                     mvc.perform(post(API + "/" + orderId + "/payments")
@@ -826,20 +825,32 @@ class PaymentConcurrencyIntegrationTests {
     }
 
     /**
-     * Bounded poll of pg_stat_activity: counts sessions currently waiting on a heavyweight
-     * lock. While the holder connection owns the order row, the only lock-waiting sessions
-     * in this test are the two application workers.
+     * Bounded poll of pg_stat_activity: counts active sessions blocked by the test's
+     * lock-holder connection, directly or transitively. pg_blocking_pids() reports the
+     * immediate blocker only, and PostgreSQL queues row-lock waiters behind the first
+     * waiter (tuple-lock chain), so the wait-for tree rooted at the holder pid is walked
+     * recursively instead of matching every session against the holder pid directly.
      * Observation only — never used to order transactions.
      */
     private boolean waitForBlockedSessions(long holderPid, int expected, long timeoutSeconds) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
         while (System.nanoTime() < deadline) {
             Integer blocked = jdbc.queryForObject("""
-                    SELECT COUNT(*) FROM pg_stat_activity sa
-                    WHERE sa.datname = current_database()
-                      AND sa.state = 'active'
-                      AND sa.wait_event_type = 'Lock'
-                    """, Integer.class);
+                    WITH RECURSIVE blocked(pid) AS (
+                        SELECT sa.pid FROM pg_stat_activity sa
+                        WHERE sa.datname = current_database()
+                          AND sa.state = 'active'
+                          AND sa.pid <> ?::int
+                          AND ?::int = ANY(pg_blocking_pids(sa.pid))
+                        UNION
+                        SELECT sa.pid FROM pg_stat_activity sa
+                        JOIN blocked b ON b.pid = ANY(pg_blocking_pids(sa.pid))
+                        WHERE sa.datname = current_database()
+                          AND sa.state = 'active'
+                          AND sa.pid <> ?::int
+                    )
+                    SELECT COUNT(*) FROM blocked
+                    """, Integer.class, (int) holderPid, (int) holderPid, (int) holderPid);
             if (blocked != null && blocked >= expected) {
                 return true;
             }
