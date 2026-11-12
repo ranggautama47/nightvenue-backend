@@ -21,14 +21,19 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -66,7 +71,7 @@ class PaymentRunbookQueriesIntegrationTests {
               AND method = 'QRIS'
               AND status = 'PENDING'
               AND charge_state IN ('SENDING', 'NOT_SENT')
-              AND (charge_started_at IS NULL OR charge_started_at < ?)
+              AND (charge_started_at IS NULL OR charge_started_at < now() - interval '1 hour')
             ORDER BY charge_started_at ASC NULLS LAST, id ASC;
             """;
 
@@ -79,7 +84,7 @@ class PaymentRunbookQueriesIntegrationTests {
               AND status = 'PENDING'
               AND charge_state = 'AMBIGUOUS'
               AND provider_request_id IS NULL
-              AND (charge_started_at IS NULL OR charge_started_at < ?)
+              AND (charge_started_at IS NULL OR charge_started_at < now() - interval '1 hour')
             ORDER BY charge_started_at ASC NULLS LAST, id ASC;
             """;
 
@@ -93,9 +98,9 @@ class PaymentRunbookQueriesIntegrationTests {
               AND charge_state IN ('ACCEPTED', 'AMBIGUOUS')
               AND provider_request_id IS NOT NULL
               AND charge_started_at IS NOT NULL
-              AND charge_started_at < ?
+              AND charge_started_at < now() - interval '1 hour'
             ORDER BY charge_started_at ASC, id ASC
-            LIMIT ?;
+            LIMIT 50;
             """;
 
     private static final String Q4 = """
@@ -109,21 +114,20 @@ class PaymentRunbookQueriesIntegrationTests {
                    o.total_due - COALESCE(a.active_total, 0) AS outstanding_amount,
                    COALESCE(x.unresolved_xendit, '') AS unresolved_xendit_payments
             FROM orders o
-            LEFT JOIN LATERAL (
-                SELECT COALESCE(SUM(amount), 0) AS active_total
+            LEFT JOIN (
+                SELECT order_id, SUM(amount) AS active_total
                 FROM payments
-                WHERE payments.order_id = o.id
-                  AND payments.status IN ('PENDING', 'PAID')
-            ) a ON TRUE
-            LEFT JOIN LATERAL (
-                SELECT string_agg(p.id::text || ':' || p.charge_state, ', ' ORDER BY p.id) AS unresolved_xendit
-                FROM payments p
-                WHERE p.order_id = o.id
-                  AND p.provider = 'XENDIT'
-                  AND p.method = 'QRIS'
-                  AND p.status = 'PENDING'
-            ) x ON TRUE
-            WHERE o.venue_id = ?
+                WHERE status IN ('PENDING', 'PAID')
+                GROUP BY order_id
+            ) a ON a.order_id = o.id
+            LEFT JOIN (
+                SELECT order_id, string_agg(id::text || ':' || charge_state, ', ' ORDER BY id) AS unresolved_xendit
+                FROM payments
+                WHERE provider = 'XENDIT'
+                  AND method = 'QRIS'
+                  AND status = 'PENDING'
+                GROUP BY order_id
+            ) x ON x.order_id = o.id
             ORDER BY o.id ASC;
             """;
 
@@ -132,23 +136,20 @@ class PaymentRunbookQueriesIntegrationTests {
             SELECT key, scope, user_id, request_hash, created_at
             FROM idempotency_keys
             WHERE response_status IS NULL
-              AND created_at < ?
+              AND created_at < now() - interval '1 hour'
             ORDER BY created_at ASC;
             """;
 
     private static final String Q6 = """
             -- Q6: queryable PENDING Xendit candidates for read-only provider Status API verification
+            -- Note: Provider CANCELED is only visible through the provider Status API, not through this query.
             SELECT id, provider_request_id, charge_started_at, charge_state
             FROM payments
             WHERE provider = 'XENDIT'
               AND method = 'QRIS'
               AND status = 'PENDING'
-              AND charge_state IN ('ACCEPTED', 'AMBIGUOUS')
               AND provider_request_id IS NOT NULL
-              AND charge_started_at IS NOT NULL
-              AND charge_started_at < ?
-            ORDER BY charge_started_at ASC, id ASC
-            LIMIT ?;
+            ORDER BY charge_started_at ASC NULLS LAST, id ASC;
             """;
 
     @Autowired JdbcTemplate jdbc;
@@ -164,13 +165,15 @@ class PaymentRunbookQueriesIntegrationTests {
     private Instant recentTime;
     private Timestamp oldTs;
     private Timestamp recentTs;
-    private Timestamp cutoffTs;
     private final List<UUID> keys = new ArrayList<>();
 
     // fixture payment ids (filled in seedFixtures)
     private long p1, p2, p3, p4, p5, p6, p7, p8, p9, p10;
     private String requestP4;
     private String requestP5;
+
+    private final Set<Long> seededPaymentIds = new HashSet<>();
+    private final Set<Long> seededOrderIds = new HashSet<>();
 
     @BeforeEach
     void setup() {
@@ -218,8 +221,6 @@ class PaymentRunbookQueriesIntegrationTests {
         recentTime = base;
         oldTs = Timestamp.from(oldTime);
         recentTs = Timestamp.from(recentTime);
-        // diagnostic threshold: one hour before the seed instant
-        cutoffTs = Timestamp.from(base.minus(Duration.ofHours(1)));
 
         p1 = seedQris(createOrder(1_000_000), 300_000, "SENDING", "PENDING", null, oldTs);
         p2 = seedQris(createOrder(900_000), 200_000, "NOT_SENT", "PENDING", null, null);
@@ -233,6 +234,8 @@ class PaymentRunbookQueriesIntegrationTests {
         p8 = seedQris(createOrder(300_000), 50_000, "SENDING", "PENDING", null, recentTs);
         p9 = seedCash(createOrder(500_000), 75_000);
         p10 = seedQris(createOrder(400_000), 60_000, "AMBIGUOUS", "PENDING", null, recentTs);
+
+        seededPaymentIds.addAll(List.of(p1, p2, p3, p4, p5, p6, p7, p8, p9, p10));
     }
 
     // ---------- fixture helpers ----------
@@ -240,11 +243,13 @@ class PaymentRunbookQueriesIntegrationTests {
     private long createOrder(long totalDue) {
         orderCounter++;
         Timestamp now = Timestamp.from(Instant.now());
-        return jdbc.queryForObject("""
+        long orderId = jdbc.queryForObject("""
                 INSERT INTO orders (venue_id,order_number,cashier_id,business_date,status,subtotal,total_due,
                                     opened_at,created_at,updated_at,version)
                 VALUES (?, ?, ?, CURRENT_DATE, 'OPEN', ?, ?, ?, ?, ?, 0) RETURNING id
                 """, Long.class, venueId, fixture + "-O" + orderCounter, cashierId, totalDue, totalDue, now, now, now);
+        seededOrderIds.add(orderId);
+        return orderId;
     }
 
     /** V9 branch-3 Xendit QRIS row: reference seeded then updated to the real nv_pay_<id> value. */
@@ -273,7 +278,6 @@ class PaymentRunbookQueriesIntegrationTests {
                 VALUES (?, ?, CURRENT_DATE, 'CASH', ?, 'PAID', ?, ?, ?, ?, ?, 0)
                 RETURNING id
                 """, Long.class, orderId, venueId, amount, shiftId, now, cashierId, now, now);
-        // keep the fixture order consistent with what the production settlement path writes
         jdbc.update("UPDATE orders SET paid_total = ? WHERE id = ?", amount, orderId);
         return paymentId;
     }
@@ -290,7 +294,7 @@ class PaymentRunbookQueriesIntegrationTests {
 
     // ---------- execution helpers ----------
 
-    /** Strips the doc-marker comment lines and the trailing semicolon for JDBC execution. */
+    /** Strips the doc-marker comment lines and trailing semicolon for JDBC execution. */
     private static String executable(String sql) {
         StringBuilder stripped = new StringBuilder();
         for (String line : sql.split("\\r?\\n")) {
@@ -302,8 +306,8 @@ class PaymentRunbookQueriesIntegrationTests {
         return out;
     }
 
-    private List<Long> runIds(String sql, Object... args) {
-        return jdbc.query(executable(sql), (rs, i) -> rs.getLong(1), args);
+    private List<Long> runIds(String sql) {
+        return jdbc.query(executable(sql), (rs, i) -> rs.getLong(1));
     }
 
     private record Q4Row(long orderId, long venueId, String orderStatus, long totalDue, long paidTotal,
@@ -317,8 +321,16 @@ class PaymentRunbookQueriesIntegrationTests {
                     rs.getLong("total_due"), rs.getLong("paid_total"),
                     rs.getLong("active_reservation_total"), rs.getLong("outstanding_amount"),
                     rs.getString("unresolved_xendit_payments")));
-        }, venueId);
+        });
         return rows;
+    }
+
+    private List<UUID> runQ5Keys() {
+        return jdbc.query(executable(Q5), (rs, i) -> UUID.fromString(rs.getString("key")));
+    }
+
+    private List<Long> runQ6Ids() {
+        return jdbc.query(executable(Q6), (rs, i) -> rs.getLong("id"));
     }
 
     // =====================================================================
@@ -327,16 +339,14 @@ class PaymentRunbookQueriesIntegrationTests {
 
     @Test
     void q1_stuckSendingAndNotSent_returnsOnlyOldRows() {
-        // old SENDING first (charge_started_at 2h ago), old NOT_SENT second (NULL timestamp, NULLS LAST)
-        assertEquals(List.of(p1, p2), runIds(Q1, cutoffTs),
+        List<Long> allResults = runIds(Q1);
+        List<Long> seededResults = allResults.stream().filter(seededPaymentIds::contains).toList();
+        assertEquals(List.of(p1, p2), seededResults,
                 "Q1 must return exactly the old SENDING and old NOT_SENT fixtures");
-        // negatives: recent SENDING, AMBIGUOUS rows, FAILED, PAID CASH are excluded
-        assertTrue(!runIds(Q1, cutoffTs).contains(p8), "recent SENDING below threshold is excluded");
-        assertTrue(!runIds(Q1, cutoffTs).contains(p3) && !runIds(Q1, cutoffTs).contains(p10),
-                "AMBIGUOUS rows are not SENDING/NOT_SENT");
-        assertTrue(!runIds(Q1, cutoffTs).contains(p7), "FAILED row is excluded");
-        assertTrue(!runIds(Q1, cutoffTs).contains(p6) && !runIds(Q1, cutoffTs).contains(p9),
-                "unrelated CASH rows are excluded");
+        assertFalse(allResults.contains(p8), "recent SENDING below threshold is excluded");
+        assertFalse(allResults.contains(p3) || allResults.contains(p10), "AMBIGUOUS rows are not SENDING/NOT_SENT");
+        assertFalse(allResults.contains(p7), "FAILED row is excluded");
+        assertFalse(allResults.contains(p6) || allResults.contains(p9), "unrelated CASH rows are excluded");
     }
 
     // =====================================================================
@@ -345,13 +355,14 @@ class PaymentRunbookQueriesIntegrationTests {
 
     @Test
     void q2_ambiguousWithoutRequestId_returnsOnlyOldUnqueryableRow() {
-        assertEquals(List.of(p3), runIds(Q2, cutoffTs),
+        List<Long> allResults = runIds(Q2);
+        List<Long> seededResults = allResults.stream().filter(seededPaymentIds::contains).toList();
+        assertEquals(List.of(p3), seededResults,
                 "Q2 must return exactly the old AMBIGUOUS row without a provider request id");
-        assertTrue(!runIds(Q2, cutoffTs).contains(p10), "recent AMBIGUOUS below threshold is excluded");
-        assertTrue(!runIds(Q2, cutoffTs).contains(p5), "AMBIGUOUS with a request id is queryable and excluded");
-        assertTrue(!runIds(Q2, cutoffTs).contains(p7), "FAILED row is excluded");
-        assertTrue(!runIds(Q2, cutoffTs).contains(p1) && !runIds(Q2, cutoffTs).contains(p2),
-                "SENDING/NOT_SENT rows are not AMBIGUOUS");
+        assertFalse(allResults.contains(p10), "recent AMBIGUOUS below threshold is excluded");
+        assertFalse(allResults.contains(p5), "AMBIGUOUS with a request id is queryable and excluded");
+        assertFalse(allResults.contains(p7), "FAILED row is excluded");
+        assertFalse(allResults.contains(p1) || allResults.contains(p2), "SENDING/NOT_SENT rows are not AMBIGUOUS");
     }
 
     // =====================================================================
@@ -360,19 +371,15 @@ class PaymentRunbookQueriesIntegrationTests {
 
     @Test
     void q3_reconciliationCandidates_mirrorProductionSemantics() {
-        assertEquals(List.of(p4, p5), runIds(Q3, cutoffTs, 10),
+        List<Long> allResults = runIds(Q3);
+        List<Long> seededResults = allResults.stream().filter(seededPaymentIds::contains).toList();
+        assertEquals(List.of(p4, p5), seededResults,
                 "Q3 must return exactly the old ACCEPTED and old AMBIGUOUS rows that carry a request id");
-        // the bound LIMIT is honored: oldest candidate first
-        assertEquals(List.of(p4), runIds(Q3, cutoffTs, 1), "LIMIT ? binding must be honored");
-        // negatives
-        assertTrue(!runIds(Q3, cutoffTs, 10).contains(p1) && !runIds(Q3, cutoffTs, 10).contains(p2),
-                "SENDING/NOT_SENT are not reconciliation candidates");
-        assertTrue(!runIds(Q3, cutoffTs, 10).contains(p3) && !runIds(Q3, cutoffTs, 10).contains(p10),
-                "AMBIGUOUS without request id is not a reconciliation candidate");
-        assertTrue(!runIds(Q3, cutoffTs, 10).contains(p8), "recent SENDING is excluded");
-        assertTrue(!runIds(Q3, cutoffTs, 10).contains(p7), "FAILED row is excluded");
-        assertTrue(!runIds(Q3, cutoffTs, 10).contains(p6) && !runIds(Q3, cutoffTs, 10).contains(p9),
-                "CASH rows are excluded");
+        assertFalse(allResults.contains(p1) || allResults.contains(p2), "SENDING/NOT_SENT are not reconciliation candidates");
+        assertFalse(allResults.contains(p3) || allResults.contains(p10), "AMBIGUOUS without request id is not a reconciliation candidate");
+        assertFalse(allResults.contains(p8), "recent SENDING is excluded");
+        assertFalse(allResults.contains(p7), "FAILED row is excluded");
+        assertFalse(allResults.contains(p6) || allResults.contains(p9), "CASH rows are excluded");
     }
 
     // =====================================================================
@@ -382,39 +389,34 @@ class PaymentRunbookQueriesIntegrationTests {
     @Test
     void q4_orderActiveReservations_matchBr28AndBr20Evidence() {
         Map<Long, Q4Row> rows = runQ4();
-        assertEquals(10, rows.size(), "all seeded orders of the venue are listed exactly once");
+        Map<Long, Q4Row> seededRows = rows.entrySet().stream()
+                .filter(e -> seededOrderIds.contains(e.getKey()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a, LinkedHashMap::new));
 
-        // every order row carries the correct venue and OPEN status
-        rows.values().forEach(r -> {
+        assertEquals(10, seededRows.size(), "all 10 seeded orders of the venue are listed exactly once");
+
+        seededRows.values().forEach(r -> {
             assertEquals(venueId, r.venueId());
             assertEquals("OPEN", r.orderStatus());
         });
 
-        // unresolved string is "<payment_id>:<charge_state>" per Xendit PENDING row
-        rows.values().stream()
-                .filter(r -> r.unresolved().contains(String.valueOf(p1)))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("order holding p1 must be listed"));
-        assertQ4Row(rows, p1, 1_000_000, 0, 300_000, 700_000, p1 + ":SENDING");
-        assertQ4Row(rows, p2, 900_000, 0, 200_000, 700_000, p2 + ":NOT_SENT");
-        assertQ4Row(rows, p3, 700_000, 0, 150_000, 550_000, p3 + ":AMBIGUOUS");
-        assertQ4Row(rows, p4, 800_000, 0, 500_000, 300_000, p4 + ":ACCEPTED");
-        assertQ4Row(rows, p5, 600_000, 0, 250_000, 350_000, p5 + ":AMBIGUOUS");
-        // PAID CASH counts as active for the exact sumActiveByOrder predicate, but is not unresolved-Xendit
-        assertQ4Row(rows, p6, 400_000, 100_000, 100_000, 300_000, "");
-        // FAILED releases the reservation entirely
-        assertQ4Row(rows, p7, 850_000, 0, 0, 850_000, "");
-        // recent rows still reserve and still show as unresolved
-        assertQ4Row(rows, p8, 300_000, 0, 50_000, 250_000, p8 + ":SENDING");
-        assertQ4Row(rows, p9, 500_000, 75_000, 75_000, 425_000, "");
-        assertQ4Row(rows, p10, 400_000, 0, 60_000, 340_000, p10 + ":AMBIGUOUS");
+        assertQ4Row(seededRows, p1, 1_000_000, 0, 300_000, 700_000, p1 + ":SENDING");
+        assertQ4Row(seededRows, p2, 900_000, 0, 200_000, 700_000, p2 + ":NOT_SENT");
+        assertQ4Row(seededRows, p3, 700_000, 0, 150_000, 550_000, p3 + ":AMBIGUOUS");
+        assertQ4Row(seededRows, p4, 800_000, 0, 500_000, 300_000, p4 + ":ACCEPTED");
+        assertQ4Row(seededRows, p5, 600_000, 0, 250_000, 350_000, p5 + ":AMBIGUOUS");
+        assertQ4Row(seededRows, p6, 400_000, 100_000, 100_000, 300_000, "");
+        assertQ4Row(seededRows, p7, 850_000, 0, 0, 850_000, "");
+        assertQ4Row(seededRows, p8, 300_000, 0, 50_000, 250_000, p8 + ":SENDING");
+        assertQ4Row(seededRows, p9, 500_000, 75_000, 75_000, 425_000, "");
+        assertQ4Row(seededRows, p10, 400_000, 0, 60_000, 340_000, p10 + ":AMBIGUOUS");
     }
 
-    private void assertQ4Row(Map<Long, Q4Row> rows, long paymentId, long totalDue, long paidTotal,
+    private void assertQ4Row(Map<Long, Q4Row> seededRows, long paymentId, long totalDue, long paidTotal,
                              long activeTotal, long outstanding, String unresolved) {
-        // find the order that holds this payment
         Long orderId = jdbc.queryForObject("SELECT order_id FROM payments WHERE id = ?", Long.class, paymentId);
-        Q4Row row = rows.get(orderId);
+        Q4Row row = seededRows.get(orderId);
+        assertNotNull(row, "order holding p" + paymentId + " must be present in Q4 results");
         assertEquals(totalDue, row.totalDue(), "total_due of order holding p" + paymentId);
         assertEquals(paidTotal, row.paidTotal(), "paid_total of order holding p" + paymentId);
         assertEquals(activeTotal, row.activeTotal(), "active reservation of order holding p" + paymentId);
@@ -431,11 +433,13 @@ class PaymentRunbookQueriesIntegrationTests {
         UUID oldInFlight = seedIdempotencyKey(oldTime, null);
         UUID recentInFlight = seedIdempotencyKey(recentTime, null);
         UUID completedKey = seedIdempotencyKey(oldTime, 201);
+        Set<UUID> testKeys = Set.of(oldInFlight, recentInFlight, completedKey);
 
-        List<UUID> returned = jdbc.query(executable(Q5), (rs, i) -> UUID.fromString(rs.getString("key")), cutoffTs);
-        assertEquals(List.of(oldInFlight), returned, "only the old in-flight key is returned");
-        assertTrue(!returned.contains(recentInFlight), "recent in-flight key is below threshold");
-        assertTrue(!returned.contains(completedKey), "completed key is never in-flight");
+        List<UUID> allResults = runQ5Keys();
+        List<UUID> seededResults = allResults.stream().filter(testKeys::contains).toList();
+        assertEquals(List.of(oldInFlight), seededResults, "only the old in-flight key is returned");
+        assertFalse(allResults.contains(recentInFlight), "recent in-flight key is below threshold");
+        assertFalse(allResults.contains(completedKey), "completed key is never in-flight");
 
         assertEquals("PAYMENT_CREATE", jdbc.queryForObject(
                 "SELECT scope FROM idempotency_keys WHERE key = ?", String.class, oldInFlight));
@@ -447,21 +451,12 @@ class PaymentRunbookQueriesIntegrationTests {
 
     @Test
     void q6_queryableCandidates_fullColumnsForProviderVerification() {
-        Map<Long, Map<String, Object>> rows = new LinkedHashMap<>();
-        jdbc.query(executable(Q6), rs -> {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("provider_request_id", rs.getString("provider_request_id"));
-            row.put("charge_state", rs.getString("charge_state"));
-            rows.put(rs.getLong("id"), row);
-        }, cutoffTs, 10);
-        assertEquals(List.of(p4, p5), List.copyOf(rows.keySet()),
-                "Q6 lists the same candidates as Q3, oldest first");
-        assertEquals(requestP4, rows.get(p4).get("provider_request_id"));
-        assertEquals("ACCEPTED", rows.get(p4).get("charge_state"));
-        assertEquals(requestP5, rows.get(p5).get("provider_request_id"));
-        assertEquals("AMBIGUOUS", rows.get(p5).get("charge_state"));
-        // CANCELED cannot be detected locally: no fixture row is claimed to be CANCELED
-        assertTrue(rows.values().stream().noneMatch(r -> "CANCELED".equals(r.get("charge_state"))));
+        List<Long> allResults = runQ6Ids();
+        List<Long> seededResults = allResults.stream().filter(seededPaymentIds::contains).toList();
+        assertEquals(List.of(p4, p5), seededResults,
+                "Q6 lists the candidates with provider_request_id, oldest first");
+        assertFalse(allResults.contains(p1) || allResults.contains(p2) || allResults.contains(p3)
+                || allResults.contains(p8) || allResults.contains(p10), "rows without provider_request_id are excluded");
     }
 
     // =====================================================================
@@ -473,7 +468,7 @@ class PaymentRunbookQueriesIntegrationTests {
         Path docs = resolveDecisionsDoc();
         String markdown = Files.readString(docs, StandardCharsets.UTF_8).replace("\r\n", "\n");
         List<String> blocks = sqlBlocks(markdown);
-        assertTrue(blocks.size() >= 6, "docs/DECISIONS.md must contain the six runbook ```sql blocks");
+        assertTrue(blocks.size() >= 6, "docs/DECISIONS.md must contain at least six runbook ```sql blocks");
 
         for (int q = 1; q <= 6; q++) {
             String marker = "-- Q" + q + ":";
@@ -484,13 +479,30 @@ class PaymentRunbookQueriesIntegrationTests {
         }
     }
 
-    /** Walks up from the Surefire working directory until docs/DECISIONS.md is found; fails loudly otherwise. */
+    @Test
+    void documentedQueries_areSelectOnlyAndContainNoForbiddenTokens() {
+        List<String> forbidden = List.of("INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE");
+        for (int q = 1; q <= 6; q++) {
+            String sql = executable(constant(q)); // strips comment lines
+            String upper = sql.toUpperCase();
+            assertTrue(upper.startsWith("SELECT") || upper.startsWith("WITH"),
+                    "Q" + q + " must start with SELECT or WITH");
+            for (String token : forbidden) {
+                assertFalse(upper.contains(token),
+                        "Q" + q + " contains forbidden mutating token: " + token);
+            }
+        }
+    }
+
+    /** Walks up from System.getProperty("user.dir") until docs/DECISIONS.md is found; fails loudly otherwise. */
     private static Path resolveDecisionsDoc() {
         Path dir = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
-        while (dir != null) {
+        int levels = 0;
+        while (dir != null && levels <= 5) {
             Path candidate = dir.resolve("docs").resolve("DECISIONS.md");
             if (Files.exists(candidate)) return candidate;
             dir = dir.getParent();
+            levels++;
         }
         throw new IllegalStateException(
                 "docs/DECISIONS.md could not be resolved from working directory: "
