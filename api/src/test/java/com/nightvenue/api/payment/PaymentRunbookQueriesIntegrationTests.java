@@ -89,7 +89,7 @@ class PaymentRunbookQueriesIntegrationTests {
             """;
 
     private static final String Q3 = """
-            -- Q3: reconciliation candidates (exact mirror of PaymentRepository.findXenditReconciliationCandidates)
+            -- Q3: reconciliation candidates (operational equivalent of PaymentRepository.findXenditReconciliationCandidates under the default reconciliation config (minAge PT1H, batchSize 50); production reads these values from configuration)
             SELECT id
             FROM payments
             WHERE provider = 'XENDIT'

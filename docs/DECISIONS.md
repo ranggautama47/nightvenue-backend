@@ -598,10 +598,10 @@ menghasilkan AMBIGUOUS tanpa request id). Recovery via webhook bersifat kondisio
 callback asli dari provider yang membawa `reference_id` yang dapat dipakai dan lolos verifikasi
 Status API. Bila tidak ada webhook, TIDAK ada prosedur release otomatis yang disetujui.
 
-### Q3 — Kandidat reconciliation (semantik persis source)
+### Q3 — Kandidat reconciliation (operational equivalent under default config)
 
 ```sql
--- Q3: reconciliation candidates (exact mirror of PaymentRepository.findXenditReconciliationCandidates)
+-- Q3: reconciliation candidates (operational equivalent of PaymentRepository.findXenditReconciliationCandidates under the default reconciliation config (minAge PT1H, batchSize 50); production reads these values from configuration)
 SELECT id
 FROM payments
 WHERE provider = 'XENDIT'
@@ -654,6 +654,10 @@ memasukkan `active_reservation_total`: itu yang membuat sisa balance berkurang (
 `existsActiveByOrder` true sehingga BR-20 memblokir VOID. `unresolved_xendit_payments`
 berformat `<payment_id>:<charge_state>` (diurutkan berdasarkan payment ID).
 
+**Catatan:** Q4 menghasilkan laporan **GLOBAL** di semua venue (tidak ada filter `venue_id`).
+Operator yang ingin melihat satu venue saja dapat menambahkan `WHERE o.venue_id = <id>`
+pada query, namun bentuk yang diedit tersebut **tidak** dicakup oleh test integrasi.
+
 ### Q5 — Idempotency key in-flight
 
 ```sql
@@ -693,6 +697,11 @@ payment lokal tetap PENDING, reservasi tetap terpegang, BR-20 dapat terus memblo
 dan tidak ada prosedur release lokal yang disetujui. Jangan merekomendasikan mutasi manual
 ke CANCELLED.
 
+**Catatan:** Q6 sengaja **lebih luas dari Q3** — tidak ada *age cutoff*, tidak ada filter
+`charge_state`, dan tidak ada `LIMIT`. Q6 **bukan** daftar kandidat reconciliation; ia hanya
+menampilkan baris PENDING Xendit yang memiliki `provider_request_id` untuk pemeriksaan
+read-only ke Status API provider.
+
 ### Batas recovery (wajib dibaca operator)
 
 - Baris dengan `provider_request_id`: dapat dipulihkan oleh webhook terautentikasi dengan
@@ -714,6 +723,31 @@ ke CANCELLED.
 - Respons provider 401/403 saat ini diklasifikasikan AMBIGUOUS. Apakah penolakan autentikasi
   membuktikan tidak ada request dibuat masih UNVERIFIED, menunggu investigasi sandbox yang
   disetujui. Jangan reklasifikasi di tugas ini.
+
+### Konsekuensi occupancy meja (table stays OCCUPIED)
+
+Bukti kode produksi (`TableRepository.java:51-64`, `OrderLifecycleService.java:89-91,125-127`,
+`PaymentService.java:157-160`) menunjukkan:
+
+- Meja berubah **OCCUPIED** saat order dibuka (`occupyIfAvailable`, status AVAILABLE → OCCUPIED).
+- Meja dilepaskan (**OCCUPIED** → AVAILABLE) hanya pada dua jalur:
+  1. **VOID** (`voidOrder`): setelah gate **BR-20** (`existsActiveByOrder` true → blokir),
+     lalu `releaseIfOccupied` (baris 125-127).
+  2. **Settlement penuh** (`createPayment`): saat `fullyPaid` true (hanya status `PAID`
+     dihitung, `PENDING` dikecualikan), lalu `releaseIfOccupied` (baris 157-160).
+
+**Akibatnya:** Baris payment PENDING yang belum tuntas (termasuk Xendit PENDING dengan
+atau tanpa `provider_request_id`, yaitu Q1/Q2/Q3) dihitung sebagai *active* oleh
+`existsActiveByOrder` / `sumActiveByOrder` (predikat `status IN ('PENDING','PAID')`).
+Hal ini:
+- **Mereservasi balance** (BR-28: `outstanding = total_due - sumActiveByOrder`).
+- **Memblokir VOID** (BR-20: `existsActiveByOrder` true → `Conflict("Order has active payments")`).
+- **Menahan meja di status OCCUPIED** — meja tidak bisa dilepaskan sampai order mencapai
+  PAID penuh (semua PENDING jadi PAID) atau di-VOID (harus lolos BR-20, artinya tak ada
+  payment PENDING/PAID).
+
+Tidak ada prosedur otomatis yang disetujui untuk melepaskan meja dari OCCUPIED saat
+masih ada payment PENDING yang tidak tuntas.
 
 ### Operasi yang dilarang (semua kategori di atas)
 
