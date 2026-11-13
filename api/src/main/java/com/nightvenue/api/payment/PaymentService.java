@@ -110,13 +110,7 @@ public class PaymentService {
         if (request.amount() > outstanding) {
             throw new BusinessRuleViolation("Amount exceeds outstanding balance");
         }
-        long minimumSpend = locked.minimumSpendSnapshot(); // null column maps to 0, meaning no requirement
-        if (minimumSpend > 0) {
-            long base = locked.subtotal() - locked.discountAmount();
-            if (sumActive + request.amount() >= locked.totalDue() && base < minimumSpend) {
-                throw new BusinessRuleViolation(MINIMUM_SPEND_NOT_MET);
-            }
-        }
+        checkMinimumSpend(locked, sumActive, request.amount());
 
         OrderRepository.VenueContext context = orders.findVenueContext(locked.venueId())
                 .orElseThrow(() -> new IllegalStateException("Venue context not found"));
@@ -169,6 +163,21 @@ public class PaymentService {
             throw new IllegalStateException("Failed to serialize idempotency snapshot", e);
         }
         return response;
+    }
+
+    /**
+     * OD-3 minimum-spend guard shared by the CASH/CARD_EDC path and the QRIS create
+     * path (same package): only an exhausting payment, i.e. one that takes the order
+     * to total_due, is rejected when the pre-discount base is below the snapshot.
+     */
+    static void checkMinimumSpend(OrderRepository.Order locked, long sumActive, long amount) {
+        long minimumSpend = locked.minimumSpendSnapshot(); // null column maps to 0, meaning no requirement
+        if (minimumSpend > 0) {
+            long base = locked.subtotal() - locked.discountAmount();
+            if (sumActive + amount >= locked.totalDue() && base < minimumSpend) {
+                throw new BusinessRuleViolation(MINIMUM_SPEND_NOT_MET);
+            }
+        }
     }
 
     /** Read-only payment lookup for GET /api/v1/payments/{paymentId}; no locks, no writes. */

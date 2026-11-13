@@ -76,6 +76,7 @@ class PaymentCreateXenditIntegrationTests {
     private String fixture;
     private long venueId, venueBId, cashierId, orderId, orderIdB;
     private final List<UUID> keys = new ArrayList<>();
+    private final List<Long> extraOrderIds = new ArrayList<>();
 
     @DynamicPropertySource
     static void xenditBaseUrl(DynamicPropertyRegistry registry) {
@@ -110,18 +111,35 @@ class PaymentCreateXenditIntegrationTests {
         jdbc.update("DELETE FROM audit_logs WHERE venue_id IN (?, ?) OR actor_user_id = ?", venueId, venueBId, cashierId);
         jdbc.update("DELETE FROM payments WHERE order_id IN (?, ?)", orderId, orderIdB);
         jdbc.update("DELETE FROM orders WHERE id IN (?, ?)", orderId, orderIdB);
+        extraOrderIds.forEach(id -> jdbc.update("DELETE FROM payments WHERE order_id = ?", id));
+        extraOrderIds.forEach(id -> jdbc.update("DELETE FROM orders WHERE id = ?", id));
         jdbc.update("DELETE FROM user_venues WHERE user_id = ?", cashierId);
         jdbc.update("DELETE FROM users WHERE id = ?", cashierId);
         jdbc.update("DELETE FROM venues WHERE id IN (?, ?)", venueId, venueBId);
     }
 
     private long insertOrder(long venue, String orderNumber, long totalDue) {
+        return insertOrderRow(venue, orderNumber, totalDue, 0, totalDue, 0);
+    }
+
+    /** order with an explicit pre-discount base and minimum-spend snapshot; cleaned up by cleanup() */
+    private long insertOrderWithMinimum(long venue, String orderNumber, long subtotal, long discount,
+                                        long totalDue, long minimumSpend) {
+        long id = insertOrderRow(venue, orderNumber, subtotal, discount, totalDue, minimumSpend);
+        extraOrderIds.add(id);
+        return id;
+    }
+
+    private long insertOrderRow(long venue, String orderNumber, long subtotal, long discount,
+                                long totalDue, long minimumSpend) {
         Timestamp now = Timestamp.from(Instant.now());
         return jdbc.queryForObject("""
-                INSERT INTO orders (venue_id,order_number,cashier_id,business_date,status,subtotal,total_due,
+                INSERT INTO orders (venue_id,order_number,cashier_id,business_date,status,subtotal,
+                                    discount_amount,total_due,paid_total,minimum_spend_snapshot,
                                     opened_at,created_at,updated_at,version)
-                VALUES (?, ?, ?, CURRENT_DATE, 'OPEN', ?, ?, ?, ?, ?, 0) RETURNING id
-                """, Long.class, venue, orderNumber, cashierId, totalDue, totalDue, now, now, now);
+                VALUES (?, ?, ?, CURRENT_DATE, 'OPEN', ?, ?, ?, 0, ?, ?, ?, ?, 0) RETURNING id
+                """, Long.class, venue, orderNumber, cashierId, subtotal, discount, totalDue,
+                minimumSpend, now, now, now);
     }
 
     private String bearer() {
@@ -139,7 +157,11 @@ class PaymentCreateXenditIntegrationTests {
     }
 
     private ResultActions createQris(UUID key, long amount) throws Exception {
-        return mvc.perform(post(API + "/" + orderId + "/payments")
+        return createQris(orderId, key, amount);
+    }
+
+    private ResultActions createQris(long order, UUID key, long amount) throws Exception {
+        return mvc.perform(post(API + "/" + order + "/payments")
                 .header("Authorization", bearer()).header("Idempotency-Key", key.toString())
                 .contentType(MediaType.APPLICATION_JSON).content(QRIS_BODY.formatted(amount)));
     }
@@ -469,6 +491,130 @@ class PaymentCreateXenditIntegrationTests {
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value("PAYMENT_METHOD_NOT_SUPPORTED"));
         assertEquals(0, XenditStub.count());
+    }
+
+    // ---------- BR-05: minimum spend enforced on the QRIS create path ----------
+
+    @Test
+    void minimumSpend_qris_exactlyAtMinimum_ok() throws Exception {
+        // base 10000 == snapshot 10000 -> the exhausting payment is allowed
+        long order = insertOrderWithMinimum(venueId, fixture + "-MS1", 10000, 0, 10000, 10000);
+        XenditStub.reset(XenditStub.Mode.SUCCESS, order, null, jdbc);
+        createQris(order, key(), 10000)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+        assertEquals(1, XenditStub.count());
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM payments WHERE order_id = ?", Integer.class, order));
+    }
+
+    @Test
+    void minimumSpend_qris_belowMinimum_exhaustingPayment_422() throws Exception {
+        // disposal example: base 10000 < snapshot 11000; exhausting payment always rejected
+        long order = insertOrderWithMinimum(venueId, fixture + "-MS2", 10000, 0, 10000, 11000);
+        XenditStub.reset(XenditStub.Mode.SUCCESS, order, null, jdbc);
+        UUID key = key();
+        createQris(order, key, 10000)
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value(PaymentService.MINIMUM_SPEND_NOT_MET));
+        assertEquals(0, XenditStub.count()); // no provider call
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM payments WHERE order_id = ?", Integer.class, order));
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM idempotency_keys WHERE key = ?", Integer.class, key));
+    }
+
+    @Test
+    void minimumSpend_qris_partialNotExhausting_ok() throws Exception {
+        long order = insertOrderWithMinimum(venueId, fixture + "-MS3", 10000, 0, 10000, 11000);
+        XenditStub.reset(XenditStub.Mode.SUCCESS, order, null, jdbc);
+        createQris(order, key(), 4000)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+        assertEquals(1, XenditStub.count());
+        assertEquals(4000, jdbc.queryForObject(
+                "SELECT amount FROM payments WHERE order_id = ?", Long.class, order));
+    }
+
+    @Test
+    void minimumSpend_qris_discountIncludedInBase() throws Exception {
+        // base = 10000 - 3000 = 7000 < snapshot 8000 -> exhausting payment rejected
+        long rejectedOrder = insertOrderWithMinimum(venueId, fixture + "-MS4", 10000, 3000, 7000, 8000);
+        XenditStub.reset(XenditStub.Mode.SUCCESS, rejectedOrder, null, jdbc);
+        createQris(rejectedOrder, key(), 7000)
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value(PaymentService.MINIMUM_SPEND_NOT_MET));
+        assertEquals(0, XenditStub.count());
+
+        // same base 7000 with snapshot 7000 -> the exhausting payment succeeds
+        long acceptedOrder = insertOrderWithMinimum(venueId, fixture + "-MS5", 10000, 3000, 7000, 7000);
+        XenditStub.reset(XenditStub.Mode.SUCCESS, acceptedOrder, null, jdbc);
+        createQris(acceptedOrder, key(), 7000)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+        assertEquals(1, XenditStub.count());
+    }
+
+    @Test
+    void minimumSpend_qris_zeroSnapshotDisabled() throws Exception {
+        long order = insertOrderWithMinimum(venueId, fixture + "-MS6", 1000, 0, 1000, 0);
+        XenditStub.reset(XenditStub.Mode.SUCCESS, order, null, jdbc);
+        createQris(order, key(), 1000)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+        assertEquals(1, XenditStub.count());
+    }
+
+    @Test
+    void minimumSpend_qris_pendingQrisCountsTowardExhaustion() throws Exception {
+        long order = insertOrderWithMinimum(venueId, fixture + "-MS7", 10000, 0, 10000, 11000);
+        XenditStub.reset(XenditStub.Mode.SUCCESS, order, null, jdbc);
+        createQris(order, key(), 4000)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING")); // PENDING reserves the balance
+        // 4000 PENDING + 6000 = total_due and base 10000 < snapshot 11000 -> rejected
+        createQris(order, key(), 6000)
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value(PaymentService.MINIMUM_SPEND_NOT_MET));
+        assertEquals(1, XenditStub.count()); // only the first create reached the provider
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM payments WHERE order_id = ?", Integer.class, order));
+    }
+
+    @Test
+    void minimumSpend_qris_rejectedCreateRollsBackReservation_sameKeyRetrySucceeds() throws Exception {
+        // same behaviour as the CASH path (PaymentIntegrationTests.minimumSpend_discountIncludedInBase):
+        // the 422 rolls back TX1 including the idempotency reservation, so the key is reusable
+        long order = insertOrderWithMinimum(venueId, fixture + "-MS8", 10000, 0, 10000, 11000);
+        XenditStub.reset(XenditStub.Mode.SUCCESS, order, null, jdbc);
+        UUID key = key();
+        createQris(order, key, 10000)
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value(PaymentService.MINIMUM_SPEND_NOT_MET));
+        assertEquals(0, XenditStub.count());
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM idempotency_keys WHERE key = ?", Integer.class, key));
+
+        // a partial amount on the same key is not exhausting -> accepted
+        createQris(order, key, 4000)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+        assertEquals(1, XenditStub.count());
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM payments WHERE order_id = ?", Integer.class, order));
+    }
+
+    @Test
+    void minimumSpend_qris_replayOfSuccessfulCreate_unchanged() throws Exception {
+        long order = insertOrderWithMinimum(venueId, fixture + "-MS9", 10000, 0, 10000, 10000);
+        XenditStub.reset(XenditStub.Mode.SUCCESS, order, null, jdbc);
+        UUID key = key();
+        MvcResult first = createQris(order, key, 10000).andExpect(status().isCreated()).andReturn();
+        MvcResult replay = createQris(order, key, 10000).andExpect(status().isCreated()).andReturn();
+        assertEquals(first.getResponse().getContentAsString(), replay.getResponse().getContentAsString());
+        assertEquals(1, XenditStub.count()); // replay never reaches the provider
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM payments WHERE order_id = ?", Integer.class, order));
     }
 
     // ---------- helpers ----------

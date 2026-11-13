@@ -107,10 +107,12 @@ public class QrisCreateTransactions {
             throw new Conflict("Order does not accept payments: status is " + locked.status());
         }
 
-        long outstanding = locked.totalDue() - payments.sumActiveByOrder(orderId); // SUM(PAID) + SUM(PENDING)
+        long sumActive = payments.sumActiveByOrder(orderId); // SUM(PAID) + SUM(PENDING)
+        long outstanding = locked.totalDue() - sumActive;
         if (amount > outstanding) {
             throw new BusinessRuleViolation("Amount exceeds outstanding balance");
         }
+        PaymentService.checkMinimumSpend(locked, sumActive, amount);
 
         OrderRepository.VenueContext context = orders.findVenueContext(locked.venueId())
                 .orElseThrow(() -> new IllegalStateException("Venue context not found"));
