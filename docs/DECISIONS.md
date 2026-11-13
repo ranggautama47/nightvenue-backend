@@ -10,8 +10,8 @@ Satu-satunya tempat ADR. `APPLICATION_ARCHITECTURE.md` hanya menunjuk ke sini.
 | 002 | Cashier Shift dan Batas Business Day | Accepted |
 | 003 | Stock-at-Order + atomic conditional UPDATE | Accepted |
 | 004 | VOID sebagai kompensasi (disposition + exactly-once) | Accepted |
-| 005 | Model pembayaran: Order 1:N Payment | Accepted; provider-specific clauses partially superseded by proposed ADR-022 |
-| 006 | Webhook: signature vs idempotency | Accepted; provider-specific clauses partially superseded by proposed ADR-022 |
+| 005 | Model pembayaran: Order 1:N Payment | Accepted; provider-specific clauses partially superseded by approved ADR-022 |
+| 006 | Webhook: signature vs idempotency | Accepted; provider-specific clauses partially superseded by approved ADR-022 |
 | 007 | Uang dan kuantitas | Accepted |
 | 008 | Dua repo, modular monolith Spring, ML di repo backend | Accepted |
 | 009 | Same-origin lewat Next.js rewrites, refresh token cookie | Accepted |
@@ -186,6 +186,8 @@ Aturan:
 1. **Pengembalian dihitung dari ledger**, bukan dari recipe saat ini: baris `SALE_DEDUCT` milik item dibalik (`VOID_RETURN` dengan delta lawan). Perubahan recipe di antara order dan void tidak memengaruhi hasil.
 2. **Exactly-once**: `void_logs.order_item_id` unik, dan transisi status order memakai conditional UPDATE (`WHERE status = 'OPEN'`) sebagai gerbang sebelum stok disentuh. Request VOID kedua → 409, stok tidak berubah.
 3. Payment guard for PENDING/PAID transactions: deferred to Phase 6. Not implemented in Phase 5C. Order yang sudah dibayar belum punya jalur VOID; koreksi = refund (deferred).
+
+Update 2026-11-13: guard implemented in Phase 6; see ADR-021 addendum.
 4. Void di atas `venues.void_manager_approval_threshold` oleh CASHIER → 403 `MANAGER_APPROVAL_REQUIRED`; Manager/Admin yang mengeksekusi. Nilai ambang adalah konfigurasi (angka seed hanya contoh demo).
 5. Month-1 mengimplementasikan VOID **seluruh order**. Skema (`order_items.status = VOIDED`, `void_logs` per item) sudah siap untuk item-level VOID; keterbatasan ini didokumentasikan di README.
 6. Seluruh langkah dalam satu transaksi, ditutup dengan baris di `audit_logs`.
@@ -202,11 +204,11 @@ Teks PM: "restore recipe ingredients" tanpa syarat. Itu bertentangan dengan alas
 ## ADR-005 — Model pembayaran
 
 ### Status
-Accepted. Provider-specific clauses are **partially superseded** by proposed ADR-022 only; the payment-domain decisions below remain in force.
+Accepted. Provider-specific clauses are **partially superseded** by approved ADR-022 only; the payment-domain decisions below remain in force.
 
 ### Decision
-- Historical v2.1 provider-specific decision, retained for audit: canonical methods were `CASH`, `CARD_EDC`, and `QRIS_MIDTRANS`; only QRIS used a webhook; Midtrans was behind `PaymentGateway` alongside a fake test implementation. This provider choice is partially superseded by proposed ADR-022 and does not change legacy V8 rows.
-- Legacy method `QRIS_MIDTRANS` remains valid. The proposed Xendit method/provider mapping is subject to PM schema approval; the domain rules in this ADR remain unchanged.
+- Historical v2.1 provider-specific decision, retained for audit: canonical methods were `CASH`, `CARD_EDC`, and `QRIS_MIDTRANS`; only QRIS used a webhook; Midtrans was behind `PaymentGateway` alongside a fake test implementation. This provider choice is partially superseded by approved ADR-022 and does not change legacy V8 rows. Note: `PaymentGateway` and `XenditPaymentRequestsV3Adapter` as named here were never implemented; the actual QRIS entry point is `QrisPaymentCreator` → `XenditClient` (raw RestClient, no SDK) — see ADR-022 addendum.
+- Legacy method `QRIS_MIDTRANS` remains valid. The Xendit method/provider mapping follows the schema decisions approved in ADR-022 / V9. The domain rules in this ADR remain unchanged.
 - Status payment: `PENDING, PAID, FAILED, EXPIRED, CANCELLED, REFUNDED`. `REFUNDED` dicadangkan untuk fitur refund yang deferred.
 - **Order → Payment adalah 1:N** secara permanen. Order `PAID` saat `SUM(PAID) >= total_due` dan syarat minimum spend terpenuhi. Pembayaran dengan nominal (split by amount) didukung backend sejak Month-1; UI split-bill dan `payment_allocations` (split per item) deferred.
 - `amount` payment ≤ sisa tagihan saat dibuat (422 bila melebihi). Kembalian tunai adalah urusan UI.
@@ -222,14 +224,14 @@ Skema tidak perlu diubah ketika split-bill UI dibangun.
 - `amount ≤ total_due − SUM(PAID) − SUM(PENDING)`; PENDING menahan sisa.
 - Pembuatan payment diserialkan lewat `SELECT ... FOR UPDATE` pada baris order. `Idempotency-Key` tidak menggantikan ini (hanya melindungi request identik).
 - Historical v2.1 provider-specific flow, retained for audit: Midtrans was called between TX1 and TX2; a definite call failure was recorded as `FAILED`, and a PENDING payment without a provider reference was scheduled for expiry.
-- The TX1/provider-call/TX2 shape remains a domain boundary, but provider-specific failure handling is superseded by proposed ADR-022. An ambiguous Xendit Create must never trigger an automatic second Create: keep business status `PENDING`, keep the reservation active and BR-20 VOID protection active, and represent recovery separately. `PENDING_MANUAL_REVIEW` is not a payment business status. The operator/reconciliation procedure is OPEN.
+- The TX1/provider-call/TX2 shape remains a domain boundary, but provider-specific failure handling is superseded by approved ADR-022. An ambiguous Xendit Create must never trigger an automatic second Create: keep business status `PENDING`, keep the reservation active and BR-20 VOID protection active, and represent recovery separately. `PENDING_MANUAL_REVIEW` is not a payment business status. The operator/reconciliation procedure is OPEN.
 
 ---
 
 ## ADR-006 — Webhook: signature vs idempotency
 
 ### Status
-Accepted. The distinction between sender verification and event deduplication remains in force. Midtrans-specific signature, status API, and event-key clauses are **partially superseded** by proposed ADR-022 only.
+Accepted. The distinction between sender verification and event deduplication remains in force. Midtrans-specific signature, status API, and event-key clauses are **partially superseded** by approved ADR-022 only.
 
 ### Decision
 Dua mekanisme menyelesaikan dua masalah berbeda dan keduanya wajib; exact provider authentication and event-key contracts remain provider-specific:
@@ -240,6 +242,8 @@ Dua mekanisme menyelesaikan dua masalah berbeda dan keduanya wajib; exact provid
 | Unique `(provider, event_key)` di `payment_events` | Notifikasi sah yang terkirim berkali-kali | Pengirim palsu |
 
 The historical Midtrans Status API confirmation and signature formula are not Xendit contracts. Provider status confirmation, callback verification, and event-key shape for Xendit remain OPEN until verified. The state-machine principle that rejects backward transitions (for example, settlement followed by pending → `IGNORED_STALE`) remains applicable.
+
+Note (2026-11-13): code-level callback-token verification (x-callback-token), Status API verification and event-key construction are implemented (ADR-022 addendum). The OPEN status above now refers to unvalidated provider-side event semantics and real provider behavior, not to missing code.
 
 The historical `event_key = transaction_id + ':' + transaction_status + ':' + status_code` is Midtrans-specific and is not adopted for Xendit without provider-contract verification.
 
@@ -436,7 +440,7 @@ Versi lama dalam draft (Next.js 14, Spring Boot 3.3, Python 3.11) tidak dipakai 
 **Proposed.** Tidak dikunci dari asumsi free-tier lama.
 
 ### Decision
-Phase 1 menjalankan spike ke 1–2 kandidat dan mencatat RAM, cold start, biaya, dukungan Spring + FastAPI + PostgreSQL + Redis eksternal, secret, health check, dan kebutuhan outbound provider. Referensi outbound Midtrans adalah historis; Xendit remains documentation-only until separate provider-traffic authorization. Hasil menggantikan status ADR ini. Frontend: Vercel kecuali ada blocker nyata. Demo publik wajib untuk portfolio; fallback bila hosting gagal: video demo + panduan menjalankan lokal.
+Phase 1 menjalankan spike ke 1–2 kandidat dan mencatat RAM, cold start, biaya, dukungan Spring + FastAPI + PostgreSQL + Redis eksternal, secret, health check, dan kebutuhan outbound provider. Referensi outbound Midtrans adalah historis. Xendit Create integration (M3-B) is implemented in code (ADR-022) but live provider traffic — including the Xendit sandbox smoke test — requires separate provider-traffic authorization; the hosting target for that outbound traffic is still undecided. Hasil menggantikan status ADR ini. Frontend: Vercel kecuali ada blocker nyata. Demo publik wajib untuk portfolio; fallback bila hosting gagal: video demo + panduan menjalankan lokal.
 
 ---
 
@@ -471,6 +475,8 @@ Accepted.
 - `ManagerApprovalRequired` maps to HTTP 403 with `MANAGER_APPROVAL_REQUIRED`. Idempotency reservation, response, and all business effects share one transaction.
 - Payment guard for PENDING/PAID transactions: deferred to Phase 6. Not implemented in Phase 5C.
 
+**Phase 6 implementation note (dated 2026-11-13).** The BR-20 payment guard is now implemented: `OrderLifecycleService.voidOrder()` (`OrderLifecycleService.java:89`) rejects VOID with `Conflict("Order has active payments")` while holding the order row lock and before the OPEN-status gate, via `PaymentRepository.existsActiveByOrder()` (`PaymentRepository.java:42`, `status IN ('PENDING','PAID')`). This preserves the Phase 5C historical deferral above as a record of what was true then. Evidence: `PaymentIntegrationTests.void_withPaidPayment_409` and `void_withPendingPayment_409` (`PaymentIntegrationTests.java:696,708`) confirm VOID is rejected with 409 when a PENDING or PAID payment exists. Related Phase 6 evidence: order settlement releases the table only when `fullyPaid` (`PaymentService`), so an unresolved PENDING Xendit row keeps the table OCCUPIED. VOID of an order with settled payment remains refund-territory (refund DEFERRED, no milestone assigned).
+
 ### Consequences
 The payment-vs-VOID race and payment state guard are Phase 6 responsibilities. PARTIALLY_PAID orders have no cancellation path until refund support exists.
 
@@ -492,6 +498,8 @@ The Phase 6 documentation currently contains Midtrans-specific behavior that mus
 - An ambiguous Create outcome never triggers automatic Create retry. Initially keep payment status `PENDING`, the amount reservation active, and BR-20 VOID protection in force. M4 may move `AMBIGUOUS` to `PAID` only after authenticated and correlated provider evidence; do not force `charge_state=ACCEPTED` to permit that status.
 - The M4 contract must permit nullable or populated `provider_request_id` for `AMBIGUOUS`, so an authenticated Xendit webhook can recover `payment_request_id`. Correlation uses `reference_id`, `business_id`, `currency`, `amount`, `payment_id`, and `payment_request_id`.
 - M4 must validate the webhook callback token and protect against duplicate events. Preserve the unique `(provider, event_key)` guard; exact Xendit event-key construction remains OPEN.
+
+Note (2026-11-13): code-level callback-token verification (x-callback-token), Status API verification and event-key construction are implemented (ADR-022 addendum). The OPEN status above now refers to unvalidated provider-side event semantics and real provider behavior, not to missing code.
 - V9 adds `AMBIGUOUS` while keeping V1–V8 unchanged. Its status matrix permits `AMBIGUOUS` with `PAID` after the application has verified settlement evidence.
 - M3-B implementation is not part of this closure. Keep unverified QRIS request/action shape, expiry, Create idempotency, and other provider-specific semantics open.
 - Frontend receives safe QR data from NightVenue only, polls the NightVenue payment GET endpoint, and never calls Xendit directly. QR rendering details remain open until the QRIS Indonesia response is verified.
@@ -518,7 +526,21 @@ The approved commit order is M3-A only, then V9 plus `PaymentSchemaMigrationTest
 - Reconciliation events use `event_key = reconcile:<providerStatus>:<payment_request_id>:<payment_id>` so one outcome cannot shadow a later one; the scheduler is conditional on `enabled=true` and multi-instance safety relies on the settlement CAS, not a distributed lock.
 - No automatic local QRIS expiry assumption: `payment_request.expiry` stays acknowledged with 200 and no change; expiry is only resolved through the verified Status API.
 
----
+### Implementation status addendum (dated 2026-11-13)
+
+Written from committed source; supersedes nothing above and does not resolve any OPEN item.
+
+Reading note: the Status and Proposed decision statements above record the original M3-A/V9 approval boundary and are retained for audit. Subsequent PM approvals authorized M3-B implementation and M4-A/M4-B implementation as described below; they did not authorize live provider traffic. The earlier statement that exact Xendit event-key construction remains OPEN refers to provider-side event semantics. Code-level event-key construction is now implemented; provider-side semantics remain unvalidated pending approved sandbox testing.
+
+**Implemented (M3-B + V9, Phase 6 implementation):** the QRIS create orchestrator is `QrisPaymentCreator` (`QrisPaymentCreator.java:36-57`) — provider gate (`XenditProperties.isConfigured`, `XenditProperties.java:59-61`), then TX1 → `XenditClient.createQris` (`xendit/XenditClient.java:62-88`) → TX2. TX1/TX2 live in `QrisCreateTransactions` (`QrisCreateTransactions.java:75-135` begin, `:144-202` finish): TX1 reserves the idempotency key, locks the order row, validates the remaining balance, inserts the `SENDING` payment with `charge_started_at`, and commits; TX2 applies `finalizeCharge` as a version-guarded compare-and-set and completes the idempotency snapshot in the same transaction. The provider HTTP client is a raw `RestClient` (no SDK, no `PaymentGateway` interface, no adapter class); `buildCreatePayload` (`XenditClient.java:129-138`) sends `reference_id`, `type`, `country`, `currency`, `request_amount`, `channel_code` and its exact shape remains UNVERIFIED until the sandbox smoke test.
+
+**Implemented (M4-A — webhook authentication, Status API verification, settlement):** `XenditWebhookController` (`/api/v1/webhooks/xendit`, `XenditWebhookController.java:31-62`) verifies the `x-callback-token` with a constant-time comparison, supports `payment.capture` and `payment.failure`, and requires a non-blank `payment_request_id`; it then performs an independent `GET /v3/payment_requests/{id}` Status API verification (`XenditClient.getPaymentRequest`, `:90-121`) before any settlement. `XenditWebhookService.apply/applyTransaction` (`XenditWebhookService.java:62-127`) validates correlation, applies the conditional settlement (`payments.applyVerifiedStatus`, `:104`), settles the order (`orders.applySettlement`, `:112`), releases the table when the order is fully paid, and records the deduplicated `payment_events` row (`:127`).
+
+**Implemented (M4-B — opt-in reconciliation):** `PaymentReconciliationService.reconcile()` (`PaymentReconciliationService.java:62-88`) selects queryable candidates, re-verifies each one through the Status API outside any transaction or row lock, settles `SUCCEEDED`/`FAILED`/`EXPIRED` through the same settlement path, treats provider `CANCELED` as a per-cycle no-op warning, and warns about unqueryable PENDING rows. The scheduler is gated by `nightvenue.payment.reconciliation.enabled=true` and the default is `enabled=false` (`PaymentReconciliationProperties.java:15`, `PaymentReconciliationScheduler.java:13`).
+
+**Event key:** code-level construction exists in both paths — webhook `event + ":" + requestId + ":" + payment_id|capture_id` (`XenditWebhookService.java:72`) and reconciliation `reconcile:<providerStatus>` prefixed by the same builder (`PaymentReconciliationService.java:128-130`), both persisted under the unique `(provider, event_key)` guard. What remains unvalidated is the **provider-side** event semantics (which provider fields identify one business event) until approved sandbox testing; the code-level construction is implemented, not absent.
+
+**Still OPEN / not validated against the real provider:** the Xendit sandbox smoke test (`XenditSmokeTest` is skipped by design via `@EnabledIfSystemProperty`), provider-side event semantics, provider `CANCELED` local handling, `provider_transaction_id` ↔ Xendit `payment_id` mapping, QRIS request/action payload shape, expiry semantics, and Create idempotency guarantees. Local test evidence at baseline `ec3cd9e`: `PaymentRunbookQueriesIntegrationTests` (8 tests) and `PaymentConcurrencyIntegrationTests` (6 tests) run on Testcontainers PostgreSQL; full suite `Tests run: 570, Failures: 0, Errors: 0, Skipped: 1` (the single skip is `XenditSmokeTest`, by design).
 
 ## ADR-023 — Runbook operasional: diagnostik read-only untuk payment QRIS Xendit yang belum tuntas (M5-C, approved)
 

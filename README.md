@@ -6,9 +6,9 @@ Backend for **NightVenue**, a fictional nightlife venue operations platform (POS
 
 | Area | State |
 |---|---|
-| Phase 1 foundation (skeleton, Docker Compose, CI) | Complete |
+| Phase 1 foundation (skeleton, Docker Compose, CI) | Partial — version pins are recorded; Docker Compose startup, CI status, the hosting spike and the repository secret audit are NOT VERIFIED (see `docs/PHASES.md` Phase 1). |
 | Phase 2 database, business date, demo seed | Implemented |
-| Business features (orders, payments, inventory, ...) | Order open/add items and whole-order VOID/per-item SERVE implemented; payment guard deferred |
+| Business features (orders, payments, inventory, ...) | Order open/add items, whole-order VOID, per-item SERVE implemented; payments implemented — M3-A payment core + GET Payment, M3-B Xendit Create, M4-A authenticated webhook + Status API verification + settlement, M4-B opt-in reconciliation (all implemented and tested locally); minimum-spend guard present for CASH/EDC; QRIS path is **OPEN/UNVERIFIED** — a candidate pre-SENDING guard exists in the local working tree but its targeted integration tests have not run (fix approved by PM 2026-11-13 as a separate milestone, not M6) |
 | Performance and ML metrics | None published. Numbers will appear only after they are measured |
 | Hosting | Not decided (ADR-019 is *Proposed*) |
 
@@ -61,7 +61,7 @@ Stop with `docker compose down`.
 
 ## Tests
 
-Phase 5C supports whole-order VOID only; item-level VOID is deferred. PARTIALLY_PAID orders have no cancellation path until refund support exists. Payment guard for PENDING/PAID transactions: deferred to Phase 6. Not implemented in Phase 5C.
+Phase 5C supports whole-order VOID and per-item SERVE; item-level VOID is deferred. PARTIALLY_PAID orders have no cancellation path until refund support exists. Payment guard for PENDING/PAID transactions (BR-20): implemented in Phase 6 (VOID blocked when PENDING/PAID payments exist). Refund is deferred (separate PM-approved milestone required).
 
 Java (needs a JDK from `CONTEXT.md` and a running Docker engine, because Testcontainers starts PostgreSQL and Redis):
 
@@ -108,8 +108,13 @@ Design documents live in [`docs/`](docs/README.md) and are the single source of 
 
 - The 90-day inventory consumption history is synthetic data generated for portfolio demonstration purposes. It is not real production data.
 - Demo venues, menus, and customers are synthetic and are not real operational data.
-- No business endpoints yet.
 - Live deployment is unverified.
+- Xendit sandbox/provider validation is still pending (the M3-B smoke test is skipped by design). QRIS Create/response shape, expiry, Create idempotency, provider status mapping, and provider-side event semantics remain unverified; M3-B, M4-A and M4-B are implemented and tested locally against a stub, not the real provider.
+- Reconciliation (M4-B) scheduler defaults to `enabled=false`; not enabled in production configuration.
+- Refund lifecycle deferred; a separate PM-approved implementation milestone is required (not part of M4/M6).
+- Shift submit/review/reconciliation/variance workflow belongs to Phase 8 (not Phase 6).
+- `provider_transaction_id` mapping to Xendit `payment_id` remains OPEN.
+- Minimum-spend guard (BR-05): CASH and CARD_EDC are enforced via `PaymentService.checkMinimumSpend`. The QRIS path is **OPEN/UNVERIFIED** — a candidate pre-SENDING guard has been added locally in `QrisCreateTransactions.begin` (delegating to `PaymentService.checkMinimumSpend`), but it is uncommitted, has not passed its targeted integration tests, and is not delivered. Without it a QRIS payment can exhaust an order below its minimum-spend snapshot. Fix approved by PM 2026-11-13 as a separate milestone (not M6); a settlement-time guard is prohibited.
 
 ### Demo accounts
 

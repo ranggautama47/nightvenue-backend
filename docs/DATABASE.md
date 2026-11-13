@@ -163,7 +163,7 @@ CK: `age_verified = false OR (age_verified_at IS NOT NULL AND age_verified_by IS
 
 `orders.reservation_id` **tidak ada** di Month-1; ditambahkan oleh migrasi reservasi.
 
-**order_items** — **IMPLEMENTED (Phase 5A schema); item mutation is PLANNED.** Every status change must update `updated_at`.
+**order_items** — **IMPLEMENTED (Phase 5A schema; Phase 5B item mutation and Stock-at-Order; Phase 5C SERVE and whole-order VOID).** Every status change must update `updated_at`.
 | Kolom | Tipe | Catatan |
 |---|---|---|
 | id | BIGINT | PK |
@@ -192,12 +192,12 @@ Detail void (alasan, pelaku, disposition) ada di `void_logs`, tidak diduplikasi 
 | shift_id | BIGINT | FK→cashier_shifts nullable (ditambahkan Fase 6). Wajib terisi untuk `method = CASH` (divalidasi aplikasi; semua role) |
 | method | VARCHAR(20) | NN; V9 allows `CASH, CARD_EDC, QRIS_MIDTRANS, QRIS`; preserve legacy rows. |
 | amount | BIGINT | NN CK > 0; ≤ `total_due − SUM(PAID) − SUM(PENDING)`, divalidasi di bawah lock baris order (ADR-005, BR-28) |
-| status | VARCHAR(12) | NN CK `PENDING, PAID, FAILED, EXPIRED, CANCELLED, REFUNDED` (`REFUNDED` dicadangkan). An ambiguous Create starts `PENDING`; M4 may settle it to `PAID` only after authenticated and correlated provider evidence. |
+| status | VARCHAR(12) | NN CK `PENDING, PAID, FAILED, EXPIRED, CANCELLED, REFUNDED` (`REFUNDED` dicadangkan). An ambiguous Create starts `PENDING`; M4-A may settle it to `PAID` only after authenticated and correlated provider evidence. |
 | provider | VARCHAR(20) | `MIDTRANS` or `XENDIT`, or null for offline payments. |
 | provider_order_id | VARCHAR(60) | Existing UQ nullable; preserves legacy Midtrans values. |
 | provider_reference_id | VARCHAR(64) | Nullable unique NightVenue reference sent as Xendit `reference_id`. |
 | provider_request_id | VARCHAR(39) | Nullable unique Xendit `payment_request_id`; an authenticated webhook may supply it when Create did not return it. |
-| provider_transaction_id | VARCHAR(80) | Nullable; Xendit `payment_id` mapping remains OPEN_QUESTION for M4. |
+| provider_transaction_id | VARCHAR(80) | Nullable; Xendit `payment_id` mapping remains OPEN_QUESTION (still unresolved after M4-A/M4-B). |
 | charge_state | VARCHAR(12) | V9 adds `AMBIGUOUS` to the V8 values `NOT_SENT`, `SENDING`, `ACCEPTED`, `REJECTED`. `AMBIGUOUS` may remain paired with payment status `PAID` after verified settlement. |
 | reference_note | VARCHAR(100) | nomor struk EDC dll. |
 | paid_at | TIMESTAMPTZ | |
@@ -211,8 +211,8 @@ Detail void (alasan, pelaku, disposition) ada di `void_logs`, tidak diduplikasi 
 | id | BIGINT | PK |
 | payment_id | BIGINT | FK NN (ON DELETE RESTRICT) |
 | provider | VARCHAR(20) | NN |
-| event_key | VARCHAR(160) | NN, **UQ `(provider, event_key)`**. Duplicate webhook events are rejected by this uniqueness guard; exact Xendit event-key construction remains OPEN. |
-| result | VARCHAR(15) | NN CK `PROCESSED, IGNORED_STALE, REJECTED`; M4 validates the webhook token before processing and verifies provider status semantics. |
+| event_key | VARCHAR(160) | NN, **UQ `(provider, event_key)`**. Duplicate webhook events are rejected by this uniqueness guard; event-key construction is implemented in code (`XenditWebhookService`, reconciliation via `PaymentReconciliationService`), while provider-side event semantics remain unvalidated until approved sandbox testing. |
+| result | VARCHAR(15) | NN CK `PROCESSED, IGNORED_STALE, REJECTED`; M4-A validates the webhook token before processing and verifies provider status semantics. |
 | payload_snapshot | JSONB | NN. Snapshot tersanitasi berbasis allowlist, bukan payload mentah; tanpa secret, signature, atau header |
 | received_at | TIMESTAMPTZ | NN |
 
@@ -426,21 +426,21 @@ ALTER TABLE idempotency_keys ADD CONSTRAINT uq_idem UNIQUE (scope, user_id, key)
 | 32 | cashier_shifts.venue_id | venues.id | N:1 | RESTRICT | |
 | 33 | cashier_shifts.cashier_id | users.id | N:1 | RESTRICT | |
 | 34 | bottle_vaults.venue_id | venues.id | N:1 | RESTRICT | |
-| 36 | bottle_vaults.customer_id | customers.id | N:1 | RESTRICT | |
-| 37 | bottle_vaults.product_id | products.id | N:1 | RESTRICT | |
-| 38 | bottle_vaults.source_order_item_id | order_items.id | 1:0..1 | SET NULL | UQ (deposit exactly-once) |
-| 39 | bottle_vault_transactions.vault_id | bottle_vaults.id | N:1 | RESTRICT | |
-| 40 | bottle_vault_transactions.order_item_id | order_items.id | N:0..1 | SET NULL | |
-| 41 | bottle_vault_transactions.performed_by | users.id | N:1 | RESTRICT | |
-| 42 | stock_forecasts.venue_id | venues.id | N:1 | RESTRICT | |
-| 43 | stock_forecasts.ingredient_id | ingredients.id | N:1 | RESTRICT | |
-| 44 | stock_forecasts.requested_by | users.id | N:1 | RESTRICT | |
-| 45 | venue_faqs.venue_id | venues.id | N:1 | CASCADE | |
-| 46 | promotions.venue_id | venues.id | N:1 | CASCADE | |
-| 47 | chat_route_logs.venue_id | venues.id | N:0..1 | SET NULL | |
-| 48 | audit_logs.venue_id | venues.id | N:0..1 | SET NULL | |
-| 49 | audit_logs.actor_user_id | users.id | N:0..1 | SET NULL | |
-| 50 | idempotency_keys.user_id | users.id | N:1 | CASCADE | |
+| 35 | bottle_vaults.customer_id | customers.id | N:1 | RESTRICT | |
+| 36 | bottle_vaults.product_id | products.id | N:1 | RESTRICT | |
+| 37 | bottle_vaults.source_order_item_id | order_items.id | 1:0..1 | SET NULL | UQ (deposit exactly-once) |
+| 38 | bottle_vault_transactions.vault_id | bottle_vaults.id | N:1 | RESTRICT | |
+| 39 | bottle_vault_transactions.order_item_id | order_items.id | N:0..1 | SET NULL | |
+| 40 | bottle_vault_transactions.performed_by | users.id | N:1 | RESTRICT | |
+| 41 | stock_forecasts.venue_id | venues.id | N:1 | RESTRICT | |
+| 42 | stock_forecasts.ingredient_id | ingredients.id | N:1 | RESTRICT | |
+| 43 | stock_forecasts.requested_by | users.id | N:1 | RESTRICT | |
+| 44 | venue_faqs.venue_id | venues.id | N:1 | CASCADE | |
+| 45 | promotions.venue_id | venues.id | N:1 | CASCADE | |
+| 46 | chat_route_logs.venue_id | venues.id | N:0..1 | SET NULL | |
+| 47 | audit_logs.venue_id | venues.id | N:0..1 | SET NULL | |
+| 48 | audit_logs.actor_user_id | users.id | N:0..1 | SET NULL | |
+| 49 | idempotency_keys.user_id | users.id | N:1 | CASCADE | |
 
 **Deferred** (tidak dimigrasi): `stock_transfers.from_location_id / to_location_id → stock_locations`, `stock_transfers.requested_by / approved_by → users`, `stock_transfer_items.transfer_id → stock_transfers`, `stock_transfer_items.ingredient_id → ingredients`, `loyalty_accounts.customer_id → customers` (1:1), `loyalty_transactions.account_id → loyalty_accounts`, `loyalty_transactions.order_id → orders`, `reservations.venue_id / table_id / customer_id`, `orders.reservation_id → reservations`, `payment_allocations.payment_id → payments`, `payment_allocations.order_item_id → order_items`.
 
@@ -539,9 +539,9 @@ Riwayat order/payment sintetis bersifat opsional (Fase 11, hanya bila dibutuhkan
 ### V9 — PM approved; migration and schema tests in this change
 
 - V1–V8 are unchanged. V9 adds Xendit QRIS while preserving legacy `QRIS_MIDTRANS` rows and constraints.
-- `provider_request_id` is nullable or populated for `AMBIGUOUS` rows. M4 may recover `payment_request_id` from an authenticated webhook.
-- `charge_state=AMBIGUOUS` may coexist with payment status `PAID`, but M4 can settle it only after authenticated and correlated provider evidence.
-- M4 correlation uses `reference_id`, `business_id`, `currency`, `amount`, `payment_id`, and `payment_request_id`; webhook token validation and duplicate event protection are required.
+- `provider_request_id` is nullable or populated for `AMBIGUOUS` rows. M4-A may recover `payment_request_id` from an authenticated webhook.
+- `charge_state=AMBIGUOUS` may coexist with payment status `PAID`, but M4-A can settle it only after authenticated and correlated provider evidence.
+- M4-A correlation uses `reference_id`, `business_id`, `currency`, `amount`, `payment_id`, and `payment_request_id`; webhook token validation and duplicate event protection are required.
 - Do not assume Get Payment Request supports lookup by `reference_id`; its documented path requires `payment_request_id`.
-- Keep `provider_transaction_id` nullable. Its exact Xendit `payment_id` mapping remains OPEN_QUESTION for M4; do not constrain the field permanently to NULL.
-- Keep `REFUNDED` outside the current Xendit state/status matrix until the M4/M6 refund lifecycle is approved.
+- Keep `provider_transaction_id` nullable. Its exact Xendit `payment_id` mapping remains OPEN_QUESTION; do not constrain the field permanently to NULL.
+- Keep `REFUNDED` outside the current Xendit state/status matrix. Refund remains deferred and requires a separate PM-approved implementation milestone; it is not assigned to M4, M6, or any other current milestone.
