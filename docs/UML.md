@@ -217,7 +217,7 @@ classDiagram
         +forceReviewAtCutoff()
     }
     class BottleService {
-        +deposit(orderItemId, customerId) DepositResult
+        +deposit(orderItemId, key) DepositResult
         +redeem(qrToken, orderId, volumeMl, ownerConfirmed, key)
         +expireJob()
     }
@@ -413,8 +413,8 @@ sequenceDiagram
     participant B as BottleService
     participant D as PostgreSQL
 
-    K->>B: POST /api/v1/bottles (orderItemId, customerId, Idempotency-Key)
-    B->>D: order PAID, produk keepable, quantity 1, customer age_verified, item belum punya vault?
+    K->>B: POST /api/v1/bottles (orderItemId, Idempotency-Key)
+    B->>D: order PAID, order.customer_id != null, produk keepable, quantity 1, customer age_verified, item belum punya vault?
     alt syarat tidak terpenuhi
         B-->>K: 422
     else ok

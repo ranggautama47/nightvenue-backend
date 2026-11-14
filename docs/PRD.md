@@ -189,6 +189,7 @@ Skema untuk fitur deferred sudah dirancang di `DATABASE.md` (bagian "Deferred") 
 | BR-28 | Pembuatan payment diserialkan terhadap baris order; `amount ≤ total_due − SUM(PAID) − SUM(PENDING)` (`PENDING` menahan sisa); panggilan provider di luar lock (ADR-005). Hasil Create yang ambigu tetap `PENDING`, mempertahankan reservasi dan BR-20, serta tidak boleh memicu Create otomatis kedua. |
 | BR-29 | Satu botol fisik = satu order item `quantity = 1`; `bottle_vaults.source_order_item_id` UNIQUE; deposit memakai `Idempotency-Key` |
 | BR-30 | Review shift tidak boleh dilakukan oleh pemilik shift itu sendiri |
+| BR-31 | Durasi simpan botol adalah 30 hari kalender (`expiry_date = business_date saat deposit + 30 hari`); botol kedaluwarsa bila `businessDate > expiry_date` (D7) |
 
 ---
 
