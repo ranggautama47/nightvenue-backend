@@ -107,6 +107,12 @@ public class ApiExceptionHandler {
         return problem(HttpStatus.FORBIDDEN, "MANAGER_APPROVAL_REQUIRED");
     }
 
+    @ExceptionHandler(com.nightvenue.api.bottle.BottleConfigurationException.class)
+    ProblemDetail bottleConfiguration(com.nightvenue.api.bottle.BottleConfigurationException exception) {
+        log.error("Bottle configuration invalid: {}", exception.getMessage());
+        return problem(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error");
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     ProblemDetail dataIntegrityViolation(DataIntegrityViolationException exception) {
         String sqlState = sqlState(exception);

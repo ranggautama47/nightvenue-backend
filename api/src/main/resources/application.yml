@@ -63,6 +63,8 @@ nightvenue:
     me:
       capacity: ${AUTH_RATE_LIMIT_ME:30}
       period: ${AUTH_RATE_LIMIT_ME_PERIOD:PT1M}
+  bottle:
+    retention-days: 30
 
 management:
   endpoints:

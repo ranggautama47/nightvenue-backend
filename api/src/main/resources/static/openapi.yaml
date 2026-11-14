@@ -365,6 +365,50 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /bottles:
+    post:
+      summary: Deposit a bottle from a paid order into the vault
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId, orderItemId]
+              properties:
+                orderId: { type: integer, format: int64 }
+                orderItemId: { type: integer, format: int64 }
+      responses:
+        "201":
+          description: Bottle deposited into vault
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BottleVault" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Role not permitted
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Bottle vault already exists for this order item
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: Business rule violation (order not paid, customer not verified, item not keepable, etc.)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
 components:
   securitySchemes:
     bearerAuth:
@@ -605,6 +649,22 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/VoidedItem" }
+    BottleVault:
+      type: object
+      required: [vaultId, labelCode, productId, venueId, customerId, originalVolumeMl, remainingVolumeMl, status, storedAt, expiryDate, tokenAlreadyIssued]
+      properties:
+        vaultId: { type: integer, format: int64 }
+        labelCode: { type: string }
+        productId: { type: integer, format: int64 }
+        venueId: { type: integer, format: int64 }
+        customerId: { type: integer, format: int64 }
+        originalVolumeMl: { type: integer }
+        remainingVolumeMl: { type: integer }
+        status: { type: string, enum: [ACTIVE, EMPTY, EXPIRED, RELEASED] }
+        storedAt: { type: string, format: date-time }
+        expiryDate: { type: string, format: date }
+        qrToken: { type: [string, "null"] }
+        tokenAlreadyIssued: { type: boolean }
   responses:
     BadRequest:
       description: Invalid JSON, missing field, or password over 72 UTF-8 bytes
