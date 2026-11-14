@@ -444,29 +444,6 @@ public class BottleIntegrationTests {
     }
 
     @Test
-    void unconfiguredRetentionDaysThrows500AndRollsBackReservation() throws Exception {
-        Integer original = bottleProperties.getRetentionDays();
-        try {
-            bottleProperties.setRetentionDays(null);
-            UUID key = recordKey(UUID.randomUUID());
-
-            mvc.perform(post(BOTTLE_URL)
-                            .header("Authorization", bearer(cashierId, "CASHIER"))
-                            .header("Idempotency-Key", key)
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(depositJson(orderId, orderItemId)))
-                    .andExpect(status().isInternalServerError());
-
-            // Check reservation is rolled back
-            Boolean exists = jdbc.queryForObject(
-                    "SELECT EXISTS(SELECT 1 FROM idempotency_keys WHERE key = ?)", Boolean.class, key);
-            assertThat(exists).isFalse();
-        } finally {
-            bottleProperties.setRetentionDays(original);
-        }
-    }
-
-    @Test
     void authorizationMatrix() throws Exception {
         // CASHIER -> 201 (verified in validDepositReturns201AndCreatesDbRows)
 

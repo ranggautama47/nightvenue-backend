@@ -66,7 +66,7 @@ public class BottleService {
     @Transactional
     public BottleResponse deposit(DepositBottleRequest request, UUID idempotencyKey, String jwtSubject) {
         if (properties.getRetentionDays() == null || properties.getRetentionDays() <= 0) {
-            throw new BottleConfigurationException("Bottle retention days not configured or invalid");
+            throw new IllegalStateException("Bottle retention days not configured or invalid");
         }
 
         long actorId = Long.parseLong(jwtSubject);

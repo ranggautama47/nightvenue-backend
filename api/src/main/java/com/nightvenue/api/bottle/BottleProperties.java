@@ -1,15 +1,17 @@
 package com.nightvenue.api.bottle;
 
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
-@ConfigurationProperties("nightvenue.bottle")
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+
 @Validated
+@ConfigurationProperties("nightvenue.bottle")
 public class BottleProperties {
 
-    @NotNull @Positive
+    @NotNull
+    @Positive
     private Integer retentionDays;
 
     public Integer getRetentionDays() {
