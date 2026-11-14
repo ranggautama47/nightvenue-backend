@@ -71,6 +71,17 @@ public class ApiExceptionHandler {
         return problem(HttpStatus.SERVICE_UNAVAILABLE, "Authentication service unavailable");
     }
 
+    @ExceptionHandler(ProviderNotConfigured.class)
+    ProblemDetail providerNotConfigured() {
+        return problem(HttpStatus.SERVICE_UNAVAILABLE, "PROVIDER_NOT_CONFIGURED");
+    }
+
+    @ExceptionHandler(PaymentInProgress.class)
+    ProblemDetail paymentInProgress(HttpServletResponse response) {
+        response.setHeader("Retry-After", "3");
+        return problem(HttpStatus.CONFLICT, "PAYMENT_IN_PROGRESS");
+    }
+
     @ExceptionHandler({
             MethodArgumentNotValidException.class,
             ConstraintViolationException.class,

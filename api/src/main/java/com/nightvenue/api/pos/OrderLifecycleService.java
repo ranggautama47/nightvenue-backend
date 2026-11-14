@@ -9,6 +9,7 @@ import com.nightvenue.api.common.ManagerApprovalRequired;
 import com.nightvenue.api.common.ResourceNotFound;
 import com.nightvenue.api.common.idempotency.IdempotencyRepository;
 import com.nightvenue.api.inventory.InventoryRestoreService;
+import com.nightvenue.api.payment.PaymentRepository;
 import com.nightvenue.api.venue.TableRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +38,7 @@ public class OrderLifecycleService {
     private final IdempotencyRepository idempotency;
     private final InventoryRestoreService inventory;
     private final OrderAuditWriter audit;
+    private final PaymentRepository payments;
     private final BusinessDateService businessDates;
     private final Clock clock;
     private final ObjectMapper mapper;
@@ -44,7 +46,8 @@ public class OrderLifecycleService {
     public OrderLifecycleService(OrderRepository orders, OrderLifecycleRepository lifecycle, TableRepository tables,
                                  VenueAccessService venues, IdempotencyRepository idempotency,
                                  InventoryRestoreService inventory, OrderAuditWriter audit,
-                                 BusinessDateService businessDates, Clock clock, ObjectMapper mapper) {
+                                 PaymentRepository payments, BusinessDateService businessDates, Clock clock,
+                                 ObjectMapper mapper) {
         this.orders = orders;
         this.lifecycle = lifecycle;
         this.tables = tables;
@@ -52,6 +55,7 @@ public class OrderLifecycleService {
         this.idempotency = idempotency;
         this.inventory = inventory;
         this.audit = audit;
+        this.payments = payments;
         this.businessDates = businessDates;
         this.clock = clock;
         this.mapper = mapper;
@@ -80,6 +84,11 @@ public class OrderLifecycleService {
         }
 
         OrderRepository.Order locked = orders.findOrderForUpdate(orderId).orElseThrow(ResourceNotFound::new);
+        // BR-20: must run while holding the order lock, before the OPEN-status gate, so
+        // an OPEN order with active payments is stopped here, not by the status check.
+        if (payments.existsActiveByOrder(orderId)) {
+            throw new Conflict("Order has active payments");
+        }
         if (!"OPEN".equals(locked.status())) throw new Conflict("Order does not accept void: status is " + locked.status());
         List<OrderRepository.OrderItem> items = orders.findOrderItems(orderId);
         long threshold = lifecycle.voidApprovalThreshold(locked.venueId());

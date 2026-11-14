@@ -25,6 +25,21 @@ spring:
 nightvenue:
   seed:
     enabled: false
+  payment:
+    xendit:
+      secret-key: ${XENDIT_SECRET_KEY:}
+      base-url: ${XENDIT_BASE_URL:https://api.xendit.co}
+      api-version: ${XENDIT_API_VERSION:2024-11-11}
+      connect-timeout-ms: ${XENDIT_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${XENDIT_READ_TIMEOUT_MS:10000}
+      callback-token: ${XENDIT_CALLBACK_TOKEN:}
+    # PM to confirm: all values below are conservative placeholders. Disabled by default.
+    reconciliation:
+      enabled: ${XENDIT_RECONCILIATION_ENABLED:false}
+      fixed-delay: ${XENDIT_RECONCILIATION_FIXED_DELAY:PT5M}
+      min-age: ${XENDIT_RECONCILIATION_MIN_AGE:PT1H}
+      batch-size: ${XENDIT_RECONCILIATION_BATCH_SIZE:50}
+      max-per-cycle: ${XENDIT_RECONCILIATION_MAX_PER_CYCLE:10}
   cache:
     menu:
       ttl: ${NIGHTVENUE_CACHE_MENU_TTL:PT5M}

@@ -12,7 +12,7 @@ flowchart LR
     CASH(["Cashier"])
     MGR(["Manager"])
     ADM(["Admin"])
-    MID(["Midtrans"])
+    XEN(["Xendit (M3-B Create implemented; M4-A/M4-B implemented; sandbox validation pending)"])
 
     subgraph Sistem["NightVenue"]
         U1["Chat venue"]
@@ -49,7 +49,7 @@ flowchart LR
     ADM --> U14
     ADM --> U12
     ADM --> U13
-    MID --> U15
+    XEN --> U15
 ```
 
 Role tidak hierarkis. Otorisasi mengikuti matriks kapabilitas eksplisit di `PRD.md` bagian 4, tanpa pewarisan hak.
@@ -206,10 +206,10 @@ classDiagram
     }
     class PaymentGateway {
         <<interface>>
-        +createTransaction(payment)
-        +fetchStatus(providerOrderId)
+        +createRequest(payment)
+        +getRequest(providerRequestId)
     }
-    class MidtransGateway
+    class XenditPaymentRequestsV3Adapter
     class ShiftService {
         +open(cashier, openingFloat) CashierShift
         +submit(shiftId, actualCash)
@@ -238,6 +238,8 @@ classDiagram
     class GeminiProvider
     class GroqProvider
 
+    note for XenditPaymentRequestsV3Adapter "Planned only; not implemented — IMPLEMENTED STRUCTURE DIFFERS: no PaymentGateway interface or adapter class exists; the implemented entry point is XenditClient (RestClient, no SDK) orchestrated by QrisPaymentCreator/QrisCreateTransactions (M3-B), with webhook settlement (M4-A) and opt-in reconciliation (M4-B) also implemented. Diagram correction requires PM decision."
+
     OrderService --> BusinessDateService
     OrderService --> InventoryService
     VoidService --> BusinessDateService
@@ -245,7 +247,7 @@ classDiagram
     PaymentService --> BusinessDateService
     PaymentService --> PaymentGateway
     PaymentService --> ShiftService : validasi shift OPEN
-    MidtransGateway ..|> PaymentGateway
+    XenditPaymentRequestsV3Adapter ..|> PaymentGateway
     ShiftService --> BusinessDateService
     BottleService --> BusinessDateService
     ForecastService --> MlClient
@@ -349,27 +351,29 @@ sequenceDiagram
     end
 ```
 
-### 4.3 QRIS dan webhook duplikat
+### 4.3 Xendit Create (implemented M3-B) and ambiguous recovery (webhook settlement M4-A; reconciliation M4-B — both implemented, sandbox validation pending)
 
 ```mermaid
 sequenceDiagram
-    participant M as Midtrans
+    participant K as NightVenue backend client
+    participant X as Xendit (M3-B Create implemented)
     participant A as PaymentService
     participant D as PostgreSQL
 
-    M->>A: webhook 1
-    A->>A: verifikasi signature
-    A->>M: Status API
-    A->>D: INSERT payment_events ON CONFLICT DO NOTHING (1 baris)
-    A->>D: kunci baris order, payment PAID, order dihitung ulang
-    A-->>M: 200
-    M->>A: webhook 1 (kirim ulang)
-    A->>A: verifikasi signature
-    A->>D: INSERT payment_events ON CONFLICT DO NOTHING (0 baris)
-    D-->>A: event_key sudah ada
-    A->>A: no-op, dicatat di log terstruktur
-    A-->>M: 200
+    A->>D: TX1: lock order, reserve amount, insert PENDING, commit
+    A->>X: M3-B: Create outside transaction/lock
+    alt confirmed provider response
+        X-->>A: response shape TBD
+        A->>D: persist confirmed provider IDs
+        A-->>K: safe QR data via NightVenue backend (shape TBD)
+    else ambiguous Create outcome
+        X--xA: timeout / connection drop / uncertain 5xx
+        Note over A,D: No second Create; business status stays PENDING, reservation and BR-20 remain active
+        A->>D: charge_state=AMBIGUOUS (V9 recovery metadata)
+    end
 ```
+
+Do not assume Get Payment Request supports `reference_id` lookup; its documented path requires `payment_request_id`. M4-A may recover a missing `payment_request_id` from an authenticated webhook and correlate using `reference_id`, `business_id`, `currency`, `amount`, `payment_id`, and `payment_request_id`. Validate the callback token and protect duplicate events. Only authenticated and correlated evidence may settle `charge_state=AMBIGUOUS` to payment status `PAID`; `provider_transaction_id` stays nullable and its exact Xendit `payment_id` mapping remains OPEN_QUESTION. M4-B reconciliation (opt-in, `enabled=false` by default) re-verifies queryable candidates through the same Status API.
 
 ### 4.4 VOID order
 
@@ -381,7 +385,7 @@ sequenceDiagram
 
     K->>V: POST /api/v1/orders/id/void (alasan, disposition, Idempotency-Key)
     V->>V: cek ambang dan peran (WASTED hanya Manager/Admin)
-    Note over V,D: Payment guard for PENDING/PAID transactions: deferred to Phase 6. Not implemented in Phase 5C.
+    Note over V,D: Payment guard for PENDING/PAID transactions (BR-20): implemented in Phase 6.
     V->>D: BEGIN
     V->>D: UPDATE orders SET VOIDED WHERE status = OPEN
     alt rows = 0
@@ -546,7 +550,7 @@ stateDiagram-v2
     OPEN --> PARTIALLY_PAID : payment PAID sebagian
     OPEN --> PAID : lunas dan minimum spend terpenuhi
     PARTIALLY_PAID --> PAID : sisa lunas
-    OPEN --> VOIDED : VOID (payment guard deferred to Phase 6)
+    OPEN --> VOIDED : VOID (payment guard BR-20 implemented Phase 6)
     PAID --> REFUNDED : dicadangkan, deferred
     VOIDED --> [*]
     PAID --> [*]
@@ -576,6 +580,8 @@ stateDiagram-v2
 ```
 
 Transisi mundur dari status terminal ditolak (`IGNORED_STALE`).
+
+**Recovery is separate from payment business status.** An ambiguous Xendit Create starts with business status `PENDING`; `charge_state=AMBIGUOUS` is added by V9. Do not automatically retry Create. M4-A may set payment status to `PAID` only after authenticated and correlated provider evidence while leaving `charge_state=AMBIGUOUS`. Do not add `PENDING_MANUAL_REVIEW` to the payment status enum.
 
 ### 5.4 Bottle vault
 

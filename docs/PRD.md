@@ -1,15 +1,15 @@
-# NightVenue — PRD v2.1 (Backend Architecture Frozen Candidate)
+# NightVenue — PRD v2.2 (Xendit M3-A/V9 Closure)
 
 | Item | Isi |
 |---|---|
-| Status | v2.1: v2.0 + 12 delta hasil semantic audit PM dan OD-11. Menunggu persetujuan PM (`BACKEND_READY_FOR_PHASE_1`) |
+| Status | PM approved M3-A, V9, schema tests, and documentation in the stated order. M3-B (Xendit Create), M4-A (authenticated webhook, Status API verification, settlement) and M4-B (opt-in reconciliation) are now implemented and tested locally; provider sandbox traffic remains outside this closure and pending approval. |
 | Tanggal | 2026-10-24 (v2.0: 2026-10-23) |
 | Owner | Rangga (keputusan akhir dan integrator) |
 | PM | GPT |
 | Posisi | **NightVenue — Intelligent Nightlife Venue Operations Platform** (produk fiktif) |
 | Dokumen turunan | `DECISIONS.md`, `CONTEXT.md`, `AI_PERAN.md`, `PHASES.md`, `APPLICATION_ARCHITECTURE.md`, `DATABASE.md`, `UML.md` |
 | `DESIGN_SYSTEM.md` | **Tidak ditulis Claude** (instruksi Owner). Gerbang **implementasi frontend**, bukan gerbang backend: ditulis DeepSeek, direview Gemini, disetujui PM (OD-8). Backend Phase 1 tidak menunggunya |
-| Revisi v2.1 | Daftar delta ada di `DECISIONS.md` bagian Changelog v2.1 |
+| Revisi v2.2 | PM FINAL SYNC approved M3-A and V9 with binding M4 conditions in `DECISIONS.md` (ADR-022). |
 
 Urutan otoritas bila dokumen bertentangan: PRD untuk perilaku produk, `DATABASE.md` untuk skema, `APPLICATION_ARCHITECTURE.md` untuk teknis, `DECISIONS.md` untuk alasan. Konflik dilaporkan ke PM, bukan diselesaikan sendiri oleh agent.
 
@@ -24,7 +24,7 @@ Perubahan dari v1.0: chatbot hybrid (bukan FAQ default), Business Day kanonik, s
 | ID | Temuan | Status v2.0 |
 |---|---|---|
 | A1 | Stok dipotong setelah webhook paid → oversell | Berlaku: Stock-at-Order (ADR-003) |
-| A2 | Hanya Midtrans | Berlaku: `CASH`, `CARD_EDC`, `QRIS_MIDTRANS` |
+| A2 | Hanya Midtrans | Provider-specific clauses are partially superseded by approved ADR-022. Preserve legacy `QRIS_MIDTRANS`; M3-B (Xendit Create) and M4-A/M4-B (webhook + settlement, reconciliation) are implemented and tested locally, while provider sandbox validation is still pending. |
 | A3 | Optimistic lock untuk baris stok panas | Berlaku: conditional UPDATE + urutan ID |
 | A4 | BYOK untuk pelanggan nyata tak realistis; usulan FAQ default | **Diganti**: audiens adalah recruiter, chat hybrid (ADR-011). Asumsi v1.0 salah untuk konteks portfolio |
 | A5 | ML tanpa data dan tanpa baseline | Berlaku: data sintetis berlabel + baseline (ADR-015) |
@@ -34,7 +34,7 @@ Perubahan dari v1.0: chatbot hybrid (bukan FAQ default), Business Day kanonik, s
 | A9 | Hari operasional | **Dipertegas**: `business_day_cutoff_hour` + `BusinessDateService` (ADR-001) |
 | A10 | Pajak/service/basis minimum spend | Berlaku: basis = subtotal setelah diskon, sebelum pajak dan service |
 | A11 | Double-tap | Berlaku: `Idempotency-Key` |
-| A12 | Webhook: signature + Status API + event unik | Berlaku (ADR-006) |
+| A12 | Webhook: sender verification + event uniqueness | Domain distinction remains (ADR-006); Midtrans signature/Status API details are provider-specific historical clauses and do not define the Xendit contract |
 | A13 | Cookie lintas domain | Berlaku (ADR-009) |
 | A14 | Drift kontrak API | Berlaku: tipe digenerate dari OpenAPI |
 | A15 | Terlalu banyak fase untuk satu developer | **Diubah**: Tier 1 dan Tier 2 jadi target Month-1; urutan potong ditetapkan (ADR-017) |
@@ -94,7 +94,7 @@ Prinsip: *Stack is not the differentiator. Engineering decisions are.* dan *Comp
 
 **Bukan**: CRUD bootcamp, prototype hackathon, kumpulan teknologi tren, POS restoran biasa dengan nama diganti.
 
-**Non-goals**: Kubernetes, Kafka, RabbitMQ, Elasticsearch, event sourcing, CQRS, GraphQL, service mesh, banyak microservice Java, blockchain, voice ordering, rekomendasi AI palsu, WebSocket tanpa kebutuhan nyata, payment gateway selain Midtrans Sandbox, aplikasi mobile native, sistem pajak sesuai regulasi.
+**Non-goals**: Kubernetes, Kafka, RabbitMQ, Elasticsearch, event sourcing, CQRS, GraphQL, service mesh, banyak microservice Java, blockchain, voice ordering, rekomendasi AI palsu, WebSocket tanpa kebutuhan nyata, provider migration or live/test provider traffic under this documentation-only authorization, aplikasi mobile native, sistem pajak sesuai regulasi.
 
 ---
 
@@ -128,7 +128,7 @@ Role: `ADMIN`, `MANAGER`, `CASHIER`, `CUSTOMER`. Otorisasi di backend; cek role 
 ## 5. Scope
 
 ### 5.1 Tier 1 — Nightlife Transaction Core (wajib)
-Autentikasi, RBAC, konfigurasi venue, Business Day Cutoff, produk, bahan, recipe, inventory, Stock-at-Order, pemotongan stok atomic, siklus order, CASH, CARD_EDC, QRIS Midtrans Sandbox, state machine payment, verifikasi dan idempotensi webhook, minimum spend, Bottle Keeping (deposit, redemption, expiry), VOID dan pengembalian stok transaksional, Shift Reconciliation + review manager, CI/CD, integration test, deployment publik.
+Autentikasi, RBAC, konfigurasi venue, Business Day Cutoff, produk, bahan, recipe, inventory, Stock-at-Order, pemotongan stok atomic, siklus order, CASH, CARD_EDC, M3-A payment core dan GET Payment, approved V9 schema, M3-B Xendit Payment Requests v3 Create serta M4-A callback settlement dan M4-B reconciliation (implemented dan diuji lokal; validasi sandbox provider masih pending), minimum spend, Bottle Keeping (deposit, redemption, expiry), VOID dan pengembalian stok transaksional, Shift Reconciliation + review manager, CI/CD, integration test, deployment publik.
 
 ### 5.2 Tier 2 — AI/ML Differentiator (target Month-1)
 FastAPI ML service, intent classifier, chat lokal berbasis database, confidence threshold, fallback Spring deterministik, BYOK Gemini/Groq, rate limiting Redis, guardrail AI, evaluasi classifier, forecasting inventory + baseline, analisis biaya dan latensi.
@@ -186,7 +186,7 @@ Skema untuk fitur deferred sudah dirancang di `DATABASE.md` (bagian "Deferred") 
 | BR-25 | Redeem mensyaratkan QR token valid + `order.customer_id` = pemilik vault + `ownerConfirmed` (ADR-020) |
 | BR-26 | Penjualan memotong satu lokasi `BAR` per venue (multi-bar deferred) |
 | BR-27 | Tidak ada metrik di README tanpa pengukuran NightVenue sendiri (ADR-016) |
-| BR-28 | Pembuatan payment diserialkan terhadap baris order; `amount ≤ total_due − SUM(PAID) − SUM(PENDING)` (PENDING menahan sisa); panggilan Midtrans di luar lock (ADR-005) |
+| BR-28 | Pembuatan payment diserialkan terhadap baris order; `amount ≤ total_due − SUM(PAID) − SUM(PENDING)` (`PENDING` menahan sisa); panggilan provider di luar lock (ADR-005). Hasil Create yang ambigu tetap `PENDING`, mempertahankan reservasi dan BR-20, serta tidak boleh memicu Create otomatis kedua. |
 | BR-29 | Satu botol fisik = satu order item `quantity = 1`; `bottle_vaults.source_order_item_id` UNIQUE; deposit memakai `Idempotency-Key` |
 | BR-30 | Review shift tidak boleh dilakukan oleh pemilik shift itu sendiri |
 
@@ -237,7 +237,7 @@ Acceptance dalam bentuk ringkas Given/When/Then. Semua FR berikut adalah Month-1
 | FR-VOID-01 | `POST /api/v1/orders/{id}/void` dengan alasan + disposition | Item `ORDERED`+RESTORED: stok kembali sesuai ledger; item `SERVED`: tidak kembali |
 | FR-VOID-02 | Exactly-once | Request VOID kedua → 409; stok tidak berubah (test) |
 | FR-VOID-03 | Ambang manager | CASHIER di atas ambang → 403 `MANAGER_APPROVAL_REQUIRED` |
-| FR-VOID-04 | Ditolak bila ada payment PENDING/PAID | 409 dengan pesan yang jelas. Payment guard for PENDING/PAID transactions: deferred to Phase 6. Not implemented in Phase 5C. |
+| FR-VOID-04 | Ditolak bila ada payment PENDING/PAID | 409 dengan pesan yang jelas. Payment guard for PENDING/PAID transactions (BR-20): **implemented in Phase 6** (`OrderLifecycleService` existsActiveByOrder gate). |
 | FR-VOID-05 | `void_logs` per item + `audit_logs` | Catatan alasan, pelaku, disposition, nilai |
 | FR-VOID-06 | Perubahan recipe setelah order tidak memengaruhi pengembalian | Test: ubah recipe, void, stok kembali sebesar yang dipotong |
 
@@ -245,14 +245,15 @@ Acceptance dalam bentuk ringkas Given/When/Then. Semua FR berikut adalah Month-1
 | ID | Requirement | Acceptance |
 |---|---|---|
 | FR-PAY-01 | CASH dan CARD_EDC | Cukup bayar → order `PAID`, `closed_at`, meja `AVAILABLE`; nominal ≤ sisa tagihan |
-| FR-PAY-02 | QRIS via Midtrans Sandbox | `provider_order_id` unik; status `PENDING` |
-| FR-PAY-03 | Webhook memverifikasi signature + Status API | Signature salah → 401, tidak ada perubahan state |
+| FR-PAY-02 | QRIS provider integration (Xendit Payment Requests v3). **M3-B implemented** (TX1 → external Xendit Create → TX2 with CAS fencing); **M4-A** (webhook authentication, Status API verification, settlement) and **M4-B** (opt-in reconciliation) implemented and tested locally; **provider sandbox validation pending** | Existing `QRIS_MIDTRANS` data remains valid; status `PENDING`; schema dan method V9 sudah disetujui melalui ADR-022, sedangkan detail request/response Xendit QRIS, expiry, Create idempotency, dan provider status mapping tetap OPEN sampai validasi sandbox |
+| FR-PAY-03 | Callback verification and provider status confirmation | M4-A implemented and tested locally: verifikasi callback token `x-callback-token`, verifikasi Status API independen, korelasi dan deduplikasi event, serta settlement hanya setelah bukti terautentikasi dan terkorelasi. Sandbox/provider validation masih pending; provider-side status/event semantics tetap OPEN |
 | FR-PAY-04 | Webhook idempotent | Payload sama 5× → hanya satu record `payment_events` diproses; empat duplikat menjadi no-op (`ON CONFLICT DO NOTHING`) yang teramati lewat log terstruktur |
 | FR-PAY-05 | Webhook tidak berurutan | `settlement` lalu `pending` tidak menurunkan status |
 | FR-PAY-06 | Payment kedaluwarsa | `EXPIRED` tidak dihitung ke `paid_total` |
 | FR-PAY-07 | Beberapa payment per order (split nominal) | 2jt + 1jt + 1jt untuk tagihan 4jt → `PAID` hanya setelah semuanya sukses |
 | FR-PAY-08 | Settlement pada order `VOIDED` | Tercatat sebagai anomali, order tetap `VOIDED` |
 | FR-PAY-09 | Payment konkuren pada order yang sama | Dua payment 3jt paralel (key berbeda) untuk tagihan 4jt → tepat satu sukses, satu 422; `SUM(PAID)+SUM(PENDING) ≤ total_due` |
+| FR-PAY-10 | Ambiguous Xendit Create recovery | Never retry Create automatically; initially keep business status `PENDING`, active amount reservation, and BR-20 VOID protection. M4-A may settle `charge_state=AMBIGUOUS` to `PAID` only after authenticated and correlated evidence; keep recovery state separate from business status. |
 
 ### FR-BTL Bottle Keeping (Tier 1)
 | ID | Requirement | Acceptance |
@@ -341,7 +342,7 @@ Backend: JUnit 5, Mockito, Spring Boot Test, Testcontainers (PostgreSQL dan Redi
 13. batas Business Day (05:59:59 / 06:00:00, timezone)
 14. shift melewati cutoff → `MANAGER_REVIEW`, payment ditolak
 15. variance shift dan catatan wajib
-16. VOID saat payment PENDING — payment guard deferred to Phase 6; not implemented in Phase 5C
+16. VOID saat payment PENDING — payment guard BR-20 implemented in Phase 6 (`OrderLifecycleService`)
 17. chat: FastAPI mati → fallback
 18. chat: key tidak ada di log/DB/respons
 19. chat: `OUT_OF_SCOPE` tanpa panggilan LLM
@@ -385,15 +386,16 @@ CI aktif sejak commit pertama. `main` diproteksi. Target hosting: ADR-019 (setel
 | Dataset classifier bocor / terlalu mirip | Akurasi menyesatkan | Aturan kebocoran, set uji terpisah, baseline |
 | Recruiter enggan memasukkan API key | Bagian LLM tidak terlihat | Demo lokal tanpa key; transkrip dan video untuk jalur LLM |
 | Hosting demo gagal | Tidak ada demo publik | Spike Phase 1; fallback video + panduan lokal |
-| Midtrans Sandbox berubah | Phase 6 tersendat | Interface `PaymentGateway` |
-| Webhook butuh URL publik saat lokal | Tidak bisa diuji | Tunnel didokumentasikan |
+| Xendit QRIS Payment Requests v3 contract gaps | QRIS cannot be validated against the real provider until the approved sandbox smoke test runs | Keep request/response, expiry, Create idempotency, and provider status mapping open; follow the approved M4-A authenticated correlation and duplicate protection contract; no assumptions or provider traffic |
+| Provider callback butuh URL publik saat lokal | Callback testing tidak dapat dilakukan | M4-A webhook code is implemented and tested locally against a stub; real callback traffic still needs a public URL and approved provider sandbox validation |
+| BR-05 QRIS gap remains **OPEN/UNVERIFIED** | A QRIS payment can exhaust an order below its `minimum_spend_snapshot`; a candidate pre-SENDING guard exists in the local working tree, but the required targeted integration tests have not run | Fix was approved by PM on 2026-11-13 as a separate milestone, not M6; settlement-time guard is prohibited; do not treat the candidate as delivered |
 | Bocor secret oleh agent | Insiden | gitleaks, `.env.example`, aturan agent |
 | Dua agent FE tanpa design system | UI tidak konsisten | `DESIGN_SYSTEM.md` oleh agent lain sebelum UI pertama |
 | Klaim berlebihan di README | Kredibilitas turun | BR-27, ADR-016 |
 
 ## 13. Keputusan Terbuka
 
-Default dipakai bila tidak dijawab.
+Defaults apply only where a safe default is stated. Provider-contract and schema items marked OPEN have no assumed default and require verification or PM decision.
 
 | ID | Pertanyaan | Default |
 |---|---|---|
@@ -408,10 +410,16 @@ Default dipakai bila tidak dijawab.
 | **OD-9** | Sediakan key LLM demo di server dengan batas harian? | Tidak (risiko biaya dan penyalahgunaan); jalur LLM didemokan lewat video dan transkrip |
 | **OD-10** | Nilai ambang void dan θ confidence | Ambang void: contoh demo di seed. θ: dipilih dari validation set setelah Phase 9 |
 | **OD-11** | Minimum spend tidak tercapai dan pelanggan menolak membayar selisih | Batas Month-1 yang diterima: lihat Keterbatasan Month-1. Tidak ada fitur baru; ADR kecil hanya bila Fase 5 menemukan alur settlement realistis yang tidak mungkin |
+| **OD-12** | QRIS Indonesia Payment Requests v3 `channel_properties`, action descriptor, and payload | OPEN; verify the exact provider contract before documenting implementation fields |
+| **OD-13** | QRIS-specific expiry request behavior | OPEN; do not infer request fields from general QRIS expiry documentation |
+| **OD-14** | Create idempotency guarantee and recovery when the response is ambiguous and no `payment_request_id` was received | OPEN; no automatic second Create; Get Payment Request requires `payment_request_id`; authenticated webhook may recover it |
+| **OD-15** | QRIS-specific provider status semantics and callback verification/deduplication contract | Partially approved: validate callback token, correlate all approved identifiers/amount fields, and protect duplicate events; provider status mapping and exact event-key shape remain OPEN |
+| **OD-16** | Operator and reconciliation process for payments requiring manual review | OPEN; recovery metadata is separate from business status |
+| **OD-17** | PM approval for the provider-neutral `QRIS` method and V9 schema/constraint changes | APPROVED; preserve V1–V8 and legacy `QRIS_MIDTRANS` |
 
 ### Keterbatasan Month-1 (sengaja)
 
-- **Minimum spend** adalah kesepakatan operasional sebelum order dibuka. Sistem menegakkannya keras (BR-05): order tidak dapat `PAID` bila subtotal setelah diskon < `minimum_spend_snapshot`. Tidak ada manager override, tidak ada biaya selisih otomatis, tidak ada reservasi atau deposit. Sengketa luar biasa diselesaikan secara operasional di luar sistem. Order yang macet tetap `OPEN`/`PARTIALLY_PAID`; bila belum ada payment, VOID berlaku (ADR-004); bila sudah ada payment, belum ada jalur sistem (batas yang diketahui).
+- **Minimum spend** remains a business requirement under BR-05: an order must not become `PAID` when subtotal after discount is below `minimum_spend_snapshot`. The CASH and CARD_EDC paths enforce this via `PaymentService.checkMinimumSpend`. The QRIS path remains **OPEN/UNVERIFIED**: a candidate pre-SENDING guard has been added locally in `QrisCreateTransactions.begin`, delegating to `PaymentService.checkMinimumSpend`, but it is still uncommitted and has not passed its targeted integration tests. The fix was approved by PM on 2026-11-13 as a separate milestone, not M6. Do not treat this candidate as delivered or close the gap before tests pass and Owner/PM accepts it. A settlement-time guard is prohibited because the customer may already have paid. Tidak ada manager override, tidak ada biaya selisih otomatis, tidak ada reservasi atau deposit. Sengketa luar biasa diselesaikan secara operasional di luar sistem. Order yang macet tetap `OPEN`/`PARTIALLY_PAID`; bila belum ada payment, VOID berlaku (ADR-004); bila sudah ada payment, belum ada jalur sistem (batas yang diketahui).
 - `MANAGER_REVIEW` adalah status shift. Jangan dipakai sebagai status order.
 - VIP/VVIP hanya walk-in bila meja `AVAILABLE`; reservasi dan deposit ditunda.
 - Penjualan memotong lokasi `BAR` (BR-26). Lokasi `WAREHOUSE` ada, tetapi transfer gudang→bar ditunda; stok masuk ke BAR lewat `PURCHASE_IN` atau penyesuaian.

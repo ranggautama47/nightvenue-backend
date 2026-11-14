@@ -60,3 +60,8 @@ graphify-out/
 *.sw?
 .DS_Store
 Thumbs.db
+
+# Local AI working documents (not part of the repo)
+NIGHTVENUE_PHASE6_*.md
+.qa-closure/
+.qa-m3a/
