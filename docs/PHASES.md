@@ -17,16 +17,17 @@ Setiap fase: satu atau lebih PR; penulis ≠ reviewer; test hijau; output test d
 | 4 | Katalog, resep, inventory, ledger | 1 | Kritis | IMPLEMENTED - TESTED LOCALLY |
 | 5 | Order, item, Stock-at-Order, VOID | 1 | Kritis | PARTIAL |
 | 6 | Pembayaran dan webhook | 1 | Kritis | IN PROGRESS - M6 pending closure |
-| 7 | Bottle keeping | 1 | Kritis | NOT STARTED |
+| 7 | Bottle keeping | 1 | Kritis | IN PROGRESS — pending owner full regression |
+
 | 8 | Cashier shift | 1 | Kritis | NOT STARTED |
 | 9 | ML forecasting | 2 | Kritis (evaluasi) | NOT STARTED |
 | 10 | Hybrid chat | 2 | Kritis (privasi key) | NOT STARTED |
 | 11 | Bukti, hardening, README | — | PM + Owner | NOT STARTED |
-
-Status di atas merujuk checklist tiap fase: Fase 7–11 = NOT STARTED (checklist Fase 8 — submit/review/variance/RECONCILED — belum dikerjakan). Fondasi shift (buka shift dan stale `OPEN → MANAGER_REVIEW`) sudah masuk Fase 6 dan dibuktikan `ShiftIntegrationTests`; itu bukan checklist Fase 8. Status Fase 0, 1, 2, 3, 4, dan 5 diturunkan dari bukti Butir di bawah; item yang tidak dapat diverifikasi ditandai eksplisit, bukan diasumsikan.
-
+
+Status di atas merujuk checklist tiap fase: Fase 8–11 = NOT STARTED (checklist Fase 8 — submit/review/variance/RECONCILED — belum dikerjakan). Fondasi shift (buka shift dan stale `OPEN → MANAGER_REVIEW`) sudah masuk Fase 6 dan dibuktikan `ShiftIntegrationTests`; itu bukan checklist Fase 8. Status Fase 0, 1, 2, 3, 4, dan 5 diturunkan dari bukti Butir di bawah; item yang tidak dapat diverifikasi ditandai eksplisit, bukan diasumsikan.
+
 Pemetaan minggu (target): M1 = Fase 0–2 (+ awal 3); M2 = Fase 3–5; M3 = Fase 6–8; M4 = Fase 9–11.
-
+
 ---
 
 ## 2. Rincian Fase
@@ -155,20 +156,26 @@ Regression evidence measured at baseline `ec3cd9e` on 2026-11-13 (owner-verified
 - Reconciliation remains opt-in. Operational runbook Q1–Q6 is in ADR-023.
 
 **M5 CLOSED — PM ACCEPTED.**
-
+
 **M6: documentation in progress; pending final PM approval.**
-
+
 ### Fase 7 — Bottle keeping
-**FR**: BTL-01..06. **Kritis.**
+**FR**: BTL-01..07. **Kritis.**
 **DoD**
-- [ ] Deposit hanya dari order PAID dan customer `age_verified`; tanpa nomor identitas
-- [ ] Deposit exactly-once: `source_order_item_id` UNIQUE, `Idempotency-Key`, produk botol `quantity = 1` (FR-BTL-07); uji deposit paralel → satu vault
-- [ ] Token acak 128-bit; hanya hash disimpan; token mentah dikembalikan sekali
-- [ ] Redeem: token valid + `order.customer_id` cocok + `ownerConfirmed`; conditional UPDATE
-- [ ] Uji konkurensi redeem: sisa volume tidak pernah < 0
-- [ ] Job expiry; customer hanya melihat botolnya sendiri
-- [ ] Dokumentasi menyebut batas: bukan autentikasi kuat (ADR-020)
-
+- [x] Deposit hanya dari order PAID dan customer `age_verified`; tanpa nomor identitas - Evidence: `BottleIntegrationTests.validDepositReturns201AndCreatesDbRows`, `rejectsOrdersNotPaid`, `rejectsUnverifiedCustomer`, `piiColumnsAbsentFromSchema`
+
+- [x] Deposit exactly-once: `source_order_item_id` UNIQUE, `Idempotency-Key`, produk botol `quantity = 1` (FR-BTL-07); uji deposit paralel → satu vault - Evidence: `BottleIntegrationTests.duplicateDepositOnSameItemWithDifferentKeyReturns409`, `BottleIntegrationTests.replayReturnsSnapshotWithoutToken`, `BottleIntegrationTests.rejectsQuantityNotOne`, `BottleConcurrencyTests.concurrentDepositsOnSameItemResultInExactlyOneSuccessAndRemainingConflicts`
+- [x] Token acak 128-bit; hanya hash disimpan; token mentah dikembalikan sekali - Evidence: `BottleIntegrationTests.validDepositReturns201AndCreatesDbRows`, `replayReturnsSnapshotWithoutToken`, `piiColumnsAbsentFromSchema`
+
+- [x] Redeem: token valid + `order.customer_id` cocok + `ownerConfirmed`; conditional UPDATE - Evidence: `BottleRedeemIntegrationTests.partialRedeemAddsZeroValueServedItemWithoutChangingOrderTotals`, `otherCustomersOrderReturns404`, `ownerConfirmedFalseReturns422NoStateChange`, `leakRawTokenAbsentFromLogsAuditIdempotencyAndResponse`
+
+- [x] Uji konkurensi redeem: sisa volume tidak pernah < 0 - Evidence: `BottleRedeemConcurrencyTests.parallelRedeemsNeverOverdrawVault`
+
+- [x] Job expiry; customer hanya melihat botolnya sendiri - Evidence: `BottleExpiryIntegrationTests.expiresOnlyActiveWithPastExpiry`, `expiryDateEqualToBusinessDateNotExpired`, `rerunIsIdempotent`; `BottleExpiryConfigurationTests.disabledByDefault`, `independenceBothWays`; `BottleQueryIntegrationTests.customerSeesOnlyOwnBottles`
+
+- [x] Dokumentasi menyebut batas: bukan autentikasi kuat (ADR-020) - Evidence: `README.md` bagian "Bottle keeping".
+
+
 ### Fase 8 — Cashier shift
 **FR**: SHF-01..06. **Kritis.**
 **DoD**

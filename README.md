@@ -8,7 +8,7 @@ Backend for **NightVenue**, a fictional nightlife venue operations platform (POS
 |---|---|
 | Phase 1 foundation (skeleton, Docker Compose, CI) | Partial — version pins are recorded; Docker Compose startup, CI status, the hosting spike and the repository secret audit are NOT VERIFIED (see `docs/PHASES.md` Phase 1). |
 | Phase 2 database, business date, demo seed | Implemented |
-| Business features (orders, payments, inventory, ...) | Order open/add items, whole-order VOID, per-item SERVE implemented; payments implemented — M3-A payment core + GET Payment, M3-B Xendit Create, M4-A authenticated webhook + Status API verification + settlement, M4-B opt-in reconciliation (all implemented and tested locally); minimum-spend guard present for CASH/EDC; QRIS path is **OPEN/UNVERIFIED** — a candidate pre-SENDING guard exists in the local working tree but its targeted integration tests have not run (fix approved by PM 2026-11-13 as a separate milestone, not M6) |
+| Business features (orders, payments, inventory, ...) | Order open/add items, whole-order VOID, per-item SERVE implemented; payments implemented — M3-A payment core + GET Payment, M3-B Xendit Create, M4-A authenticated webhook + Status API verification + settlement, M4-B opt-in reconciliation (all implemented and tested locally); BR-05 minimum-spend guard is implemented for CASH, CARD_EDC, and QRIS and locally tested. Xendit provider validation remains pending. |
 | Performance and ML metrics | None published. Numbers will appear only after they are measured |
 | Hosting | Not decided (ADR-019 is *Proposed*) |
 
@@ -114,7 +114,14 @@ Design documents live in [`docs/`](docs/README.md) and are the single source of 
 - Refund lifecycle deferred; a separate PM-approved implementation milestone is required (not part of M4/M6).
 - Shift submit/review/reconciliation/variance workflow belongs to Phase 8 (not Phase 6).
 - `provider_transaction_id` mapping to Xendit `payment_id` remains OPEN.
-- Minimum-spend guard (BR-05): CASH and CARD_EDC are enforced via `PaymentService.checkMinimumSpend`. The QRIS path is **OPEN/UNVERIFIED** — a candidate pre-SENDING guard has been added locally in `QrisCreateTransactions.begin` (delegating to `PaymentService.checkMinimumSpend`), but it is uncommitted, has not passed its targeted integration tests, and is not delivered. Without it a QRIS payment can exhaust an order below its minimum-spend snapshot. Fix approved by PM 2026-11-13 as a separate milestone (not M6); a settlement-time guard is prohibited.
+- BR-05 minimum spend is enforced for CASH, CARD_EDC, and QRIS through `PaymentService.checkMinimumSpend` and is covered by local integration tests. This does not indicate Xendit provider validation; sandbox validation remains pending. The guard rejects an exhausting payment below the order's minimum-spend snapshot before the provider call.
+
+### Bottle keeping
+
+- The redeem QR token proves possession of the label; it is **not strong authentication** (ADR-020). Anyone holding the label who is confirmed by a cashier can redeem the bottle.
+- Deposit requires an order linked to a customer through `order.customer_id`. Walk-in orders without a customer cannot deposit a bottle.
+- The bottle expiry job is off by default (`nightvenue.bottle.expiry.enabled=false`) and is independent of payment reconciliation.
+- Bottle retention is 30 days (`nightvenue.bottle.retention-days`); this property is validated at startup.
 
 ### Demo accounts
 
