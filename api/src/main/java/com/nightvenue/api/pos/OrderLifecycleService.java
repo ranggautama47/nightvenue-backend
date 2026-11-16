@@ -90,6 +90,9 @@ public class OrderLifecycleService {
             throw new Conflict("Order has active payments");
         }
         if (!"OPEN".equals(locked.status())) throw new Conflict("Order does not accept void: status is " + locked.status());
+        if (orders.hasBottleRedemptionItems(orderId)) {
+            throw new Conflict("Order with bottle redemption items cannot be voided");
+        }
         List<OrderRepository.OrderItem> items = orders.findOrderItems(orderId);
         long threshold = lifecycle.voidApprovalThreshold(locked.venueId());
         boolean aboveThreshold = locked.subtotal() > threshold;

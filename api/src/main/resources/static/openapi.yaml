@@ -365,6 +365,144 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /bottles:
+    get:
+      summary: List bottles stored at a venue
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: venueId
+          required: true
+          schema: { type: integer, format: int64 }
+        - in: query
+          name: status
+          required: false
+          schema: { type: string, enum: [ACTIVE, EMPTY, EXPIRED, RELEASED] }
+        - in: query
+          name: customerId
+          required: false
+          schema: { type: integer, format: int64 }
+        - in: query
+          name: page
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: size
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Bottles at the requested venue, ordered by stored time and vault ID descending
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/BottleQueryResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Role not permitted }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      summary: Deposit a bottle from a paid order into the vault
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId, orderItemId]
+              properties:
+                orderId: { type: integer, format: int64 }
+                orderItemId: { type: integer, format: int64 }
+      responses:
+        "201":
+          description: Bottle deposited into vault
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BottleVault" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Role not permitted
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Bottle vault already exists for this order item
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: Business rule violation (order not paid, customer not verified, item not keepable, etc.)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /customers/me/bottles:
+    get:
+      summary: List the authenticated customer's bottles across venues
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema: { type: string, enum: [ACTIVE, EMPTY, EXPIRED, RELEASED] }
+        - in: query
+          name: page
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: size
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: The authenticated customer's bottles, ordered by stored time and vault ID descending
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/BottleQueryResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Role not permitted }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /bottles/redeem:
+    post:
+      summary: Redeem bottle volume into an order
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RedeemBottleRequest" }
+      responses:
+        "201":
+          description: Bottle volume redeemed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BottleRedeemResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Role not permitted }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Concurrent bottle state conflict }
+        "422": { description: Business rule violation }
 components:
   securitySchemes:
     bearerAuth:
@@ -605,6 +743,56 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/VoidedItem" }
+    RedeemBottleRequest:
+      type: object
+      required: [qrToken, orderId, volumeMl, ownerConfirmed]
+      properties:
+        qrToken: { type: string, minLength: 1 }
+        orderId: { type: integer, format: int64, minimum: 1 }
+        volumeMl: { type: integer, format: int32, minimum: 1 }
+        ownerConfirmed: { type: boolean }
+    BottleRedeemResponse:
+      type: object
+      required: [vaultId, labelCode, orderId, orderItemId, redeemedVolumeMl, remainingVolumeMl, vaultStatus]
+      properties:
+        vaultId: { type: integer, format: int64 }
+        labelCode: { type: string }
+        orderId: { type: integer, format: int64 }
+        orderItemId: { type: integer, format: int64 }
+        redeemedVolumeMl: { type: integer, format: int32 }
+        remainingVolumeMl: { type: integer, format: int32 }
+        vaultStatus: { type: string, enum: [ACTIVE, EMPTY] }
+    BottleVault:
+      type: object
+      required: [vaultId, labelCode, productId, venueId, customerId, originalVolumeMl, remainingVolumeMl, status, storedAt, expiryDate, tokenAlreadyIssued]
+      properties:
+        vaultId: { type: integer, format: int64 }
+        labelCode: { type: string }
+        productId: { type: integer, format: int64 }
+        venueId: { type: integer, format: int64 }
+        customerId: { type: integer, format: int64 }
+        originalVolumeMl: { type: integer }
+        remainingVolumeMl: { type: integer }
+        status: { type: string, enum: [ACTIVE, EMPTY, EXPIRED, RELEASED] }
+        storedAt: { type: string, format: date-time }
+        expiryDate: { type: string, format: date }
+        qrToken: { type: [string, "null"] }
+        tokenAlreadyIssued: { type: boolean }
+    BottleQueryResponse:
+      type: object
+      required: [vaultId, labelCode, venueId, customerId, productId, productName, originalVolumeMl, remainingVolumeMl, storedAt, expiryDate, status]
+      properties:
+        vaultId: { type: integer, format: int64 }
+        labelCode: { type: string }
+        venueId: { type: integer, format: int64 }
+        customerId: { type: integer, format: int64 }
+        productId: { type: integer, format: int64 }
+        productName: { type: string }
+        originalVolumeMl: { type: integer, format: int32 }
+        remainingVolumeMl: { type: integer, format: int32 }
+        storedAt: { type: string, format: date-time }
+        expiryDate: { type: string, format: date }
+        status: { type: string, enum: [ACTIVE, EMPTY, EXPIRED, RELEASED] }
   responses:
     BadRequest:
       description: Invalid JSON, missing field, or password over 72 UTF-8 bytes

@@ -56,6 +56,8 @@ class Phase2DatabaseTests {
         flyway.validate();
         List<String> expected = new java.util.ArrayList<>(SEED_TABLES);
         expected.add("flyway_schema_history");
+        expected.add("bottle_vaults");
+        expected.add("bottle_vault_transactions");
         List<String> actual = jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name", String.class);
         assertEquals(expected.stream().sorted().toList(), actual);
     }
@@ -82,7 +84,11 @@ class Phase2DatabaseTests {
                 Map.entry("payments.order_id", "r"), Map.entry("payments.venue_id", "r"),
                 Map.entry("payments.shift_id", "r"), Map.entry("payments.created_by", "r"),
                 Map.entry("payment_events.payment_id", "r"),
-                Map.entry("cashier_shifts.venue_id", "r"), Map.entry("cashier_shifts.cashier_id", "r"));
+                Map.entry("cashier_shifts.venue_id", "r"), Map.entry("cashier_shifts.cashier_id", "r"),
+                Map.entry("bottle_vaults.venue_id", "r"), Map.entry("bottle_vaults.customer_id", "r"),
+                Map.entry("bottle_vaults.product_id", "r"), Map.entry("bottle_vaults.source_order_item_id", "r"),
+                Map.entry("bottle_vault_transactions.vault_id", "r"), Map.entry("bottle_vault_transactions.order_item_id", "r"),
+                Map.entry("bottle_vault_transactions.performed_by", "r"));
         Map<String, String> actual = new LinkedHashMap<>();
         jdbc.query("""
                 SELECT child.relname || '.' || child_col.attname AS fk_column, c.confdeltype::text AS delete_action
@@ -93,7 +99,7 @@ class Phase2DatabaseTests {
                 WHERE c.contype='f' AND child.relnamespace='public'::regnamespace
                 """, (org.springframework.jdbc.core.RowCallbackHandler) rs -> actual.put(rs.getString("fk_column"), rs.getString("delete_action")));
         assertEquals(expected, actual);
-        assertFalse(actual.keySet().stream().anyMatch(key -> key.startsWith("bottle_vaults.")));
+        assertTrue(actual.keySet().stream().anyMatch(key -> key.startsWith("bottle_vaults.")));
     }
 
     @Test

@@ -241,37 +241,40 @@ Catatan: `payment_events` adalah **satu record kanonik per `event_key`** (hasil 
 | Kolom | Tipe | Catatan |
 |---|---|---|
 | id | BIGINT | PK |
-| venue_id | BIGINT | FK NN |
-| customer_id | BIGINT | FK NN |
-| product_id | BIGINT | FK NN (harus `is_bottle_keepable`) |
-| source_order_item_id | BIGINT | FK→order_items, **UQ**, nullable (satu order item menghasilkan paling banyak satu vault: deposit exactly-once) |
+| venue_id | BIGINT | FK NN RESTRICT |
+| customer_id | BIGINT | FK NN RESTRICT |
+| product_id | BIGINT | FK NN RESTRICT (harus `is_bottle_keepable`) |
+| source_order_item_id | BIGINT | FK→order_items RESTRICT, **UQ** (`uq_vault_source_item`), nullable (satu order item menghasilkan paling banyak satu vault: deposit exactly-once) |
 | label_code | VARCHAR(20) | NN UQ (tercetak di label, bukan rahasia) |
 | qr_token_hash | CHAR(64) | NN UQ (SHA-256 token QR; token mentah tidak disimpan, ADR-020) |
 | original_volume_ml | INT | NN CK > 0 |
 | remaining_volume_ml | INT | NN |
 | stored_at | TIMESTAMPTZ | NN |
-| expiry_date | DATE | NN |
+| expiry_date | DATE | NN (business_date saat deposit + 30 hari konfigurasi D7; kedaluwarsa bila businessDate > expiry_date) |
 | status | VARCHAR(10) | NN CK `ACTIVE, EMPTY, EXPIRED, RELEASED` |
 | version | BIGINT | NN |
 | created_at, updated_at | TIMESTAMPTZ | NN |
 
 CK: `remaining_volume_ml >= 0 AND remaining_volume_ml <= original_volume_ml` (BR-09).
 
-**Aturan deposit Month-1 (exactly-once, BR-29):** satu botol fisik = satu `order_item` dengan `quantity = 1`. Produk `is_bottle_keepable` dengan `quantity > 1` ditolak 422 saat ditambahkan ke order (dua botol = dua order item). `source_order_item_id` UNIQUE. Deposit memakai `Idempotency-Key` (scope `BOTTLE_DEPOSIT`); request kedua untuk item yang sama dengan key berbeda → 409 `VAULT_ALREADY_EXISTS`.
+**Aturan deposit Month-1 (exactly-once, BR-29):** satu botol fisik = satu `order_item` dengan `quantity = 1`. Produk `is_bottle_keepable` dengan `quantity > 1` ditolak 422 saat ditambahkan ke order (dua botol = dua order item). `source_order_item_id` UNIQUE (`uq_vault_source_item`). Deposit memakai `Idempotency-Key` (scope `BOTTLE_DEPOSIT`); request kedua untuk item yang sama dengan key berbeda menghasilkan pesan detail `VAULT_ALREADY_EXISTS` (HTTP 409).
 
 **bottle_vault_transactions** (append-only)
 | Kolom | Tipe | Catatan |
 |---|---|---|
 | id | BIGINT | PK |
-| vault_id | BIGINT | FK NN |
+| vault_id | BIGINT | FK NN RESTRICT |
 | type | VARCHAR(10) | NN CK `DEPOSIT, REDEEM, RELEASE, EXPIRE, ADJUST` |
 | volume_delta_ml | INT | NN |
 | remaining_after_ml | INT | NN CK ≥ 0 |
-| order_item_id | BIGINT | FK nullable (untuk `REDEEM`) |
-| owner_confirmed | BOOLEAN | NN default false (BR-25; wajib true untuk `REDEEM`) |
-| performed_by | BIGINT | FK→users NN |
+| order_item_id | BIGINT | FK RESTRICT nullable (untuk `REDEEM`) |
+| owner_confirmed | BOOLEAN | NN default false (CK `ck_bv_tx_redeem_confirmed`: wajib true untuk `REDEEM`) |
+| performed_by | BIGINT | FK→users RESTRICT nullable hanya untuk `type = 'EXPIRE'` (CK `ck_bv_tx_actor`) |
 | note | VARCHAR(255) | |
 | created_at | TIMESTAMPTZ | NN |
+
+CK: `ck_bv_tx_actor` CHECK `((type = 'EXPIRE' AND performed_by IS NULL) OR (type <> 'EXPIRE' AND performed_by IS NOT NULL))` (D13 Option B).
+CK: `ck_bv_tx_redeem_confirmed` CHECK `(type <> 'REDEEM' OR owner_confirmed IS TRUE)`.
 
 ### 4.8 Shift
 
@@ -428,10 +431,10 @@ ALTER TABLE idempotency_keys ADD CONSTRAINT uq_idem UNIQUE (scope, user_id, key)
 | 34 | bottle_vaults.venue_id | venues.id | N:1 | RESTRICT | |
 | 35 | bottle_vaults.customer_id | customers.id | N:1 | RESTRICT | |
 | 36 | bottle_vaults.product_id | products.id | N:1 | RESTRICT | |
-| 37 | bottle_vaults.source_order_item_id | order_items.id | 1:0..1 | SET NULL | UQ (deposit exactly-once) |
+| 37 | bottle_vaults.source_order_item_id | order_items.id | 1:0..1 | RESTRICT | UQ `uq_vault_source_item` (deposit exactly-once) |
 | 38 | bottle_vault_transactions.vault_id | bottle_vaults.id | N:1 | RESTRICT | |
-| 39 | bottle_vault_transactions.order_item_id | order_items.id | N:0..1 | SET NULL | |
-| 40 | bottle_vault_transactions.performed_by | users.id | N:1 | RESTRICT | |
+| 39 | bottle_vault_transactions.order_item_id | order_items.id | N:0..1 | RESTRICT | |
+| 40 | bottle_vault_transactions.performed_by | users.id | N:0..1 | RESTRICT | Nullable hanya untuk `type = 'EXPIRE'` (CK `ck_bv_tx_actor`) |
 | 41 | stock_forecasts.venue_id | venues.id | N:1 | RESTRICT | |
 | 42 | stock_forecasts.ingredient_id | ingredients.id | N:1 | RESTRICT | |
 | 43 | stock_forecasts.requested_by | users.id | N:1 | RESTRICT | |

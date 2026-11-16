@@ -458,6 +458,23 @@ Ini bukti penguasaan label + pencocokan data, **bukan autentikasi kuat**: siapa 
 ### Addendum v2.1 (ADR-020): deposit exactly-once
 `bottle_vaults.source_order_item_id` UNIQUE; deposit memakai `Idempotency-Key`; produk botol wajib `quantity = 1` per order item di Month-1 (satu botol fisik = satu order item). Unit-level deposit ditunda.
 
+### Phase 7 addendum (dated 2026-11-14)
+Keputusan implementasi Phase 7 Bottle Keeping (D1-D13):
+1. D1: Customer pemilik botol diambil strictly dari order.customer_id pada order berstatus PAID. Walk-in order tanpa customerId (null) ditolak dan tidak dapat melakukan deposit pada versi ini. Request body deposit tidak memuat customerId.
+2. D2: Snapshot idempotency BOTTLE_DEPOSIT dan BOTTLE_REDEEM tidak pernah menyimpan raw token. Replay deposit mengembalikan data vault dan penanda bahwa token sudah pernah diterbitkan. Penerbitan ulang token (token re-issue) ditunda.
+3. D3: voidOrder mengunci baris order terlebih dahulu. Jika order memiliki order_item dengan item_type = 'BOTTLE_REDEMPTION', void langsung ditolak dengan HTTP 409 Conflict sebelum proses restore atau mutasi stok apa pun, terlepas dari disposition RESTORED atau WASTED. Reservasi idempotency di-rollback mengikuti pola transaksi Phase 5C. Tidak ada kompensasi volume vault pada void.
+4. D4: Redeem hanya diperbolehkan pada order dengan status OPEN atau PARTIALLY_PAID.
+5. D5: Order item redemption disisipkan lewat jalur khusus (bypassing addItems dan pemotongan stok/recipe).
+6. D6: Background scheduler bottle expiry dikontrol oleh property tersendiri (nightvenue.bottle.expiry.enabled) dengan default disabled, terpisah total dari scheduler payment reconciliation. Validasi expiry pada jalur request tetap aktif.
+7. D7: Durasi retensi penyimpanan botol adalah 30 hari kalender berdasarkan keputusan Owner (D7). Nilai ini dibaca dari property konfigurasi (nightvenue.bottle.retention-days), bukan kolom baru pada tabel venues. expiry_date = business date saat deposit + 30 hari. Botol tetap dapat di-redeem sepanjang hari expiry_date; botol dianggap kedaluwarsa hanya jika businessDate > expiry_date. Jika property tidak disetel, aplikasi gagal start saat bootstrap.
+8. D8: Isolasi venue: vault.venue_id harus sama dengan order.venue_id pada saat redeem. Staf harus memiliki akses venue yang sesuai via VenueAccessService.
+9. D9: Redeem mensyaratkan order.total_due > 0 (ditolak 422 BusinessRuleViolation bila total_due <= 0). Tidak ada endpoint close order.
+10. D10: Harga item redemption selalu unit_price = 0 dan line_total = 0. Tidak ada biaya servis atau harga botol pada redemption.
+11. D11: Deposit hanya valid untuk order_item dengan item_type = 'PRODUCT' dan status bukan 'VOIDED'.
+12. D12: Tidak ada penambahan endpoint verifikasi usia customer di Phase 7. Pengujian mengandalkan fixture/seeder.
+13. D13 (Option B): Pada tabel bottle_vault_transactions, kolom performed_by nullable hanya untuk type = 'EXPIRE' yang dipaksakan oleh CHECK constraint ck_bv_tx_actor. Transaksi manusia (DEPOSIT, REDEEM, RELEASE, ADJUST) wajib memiliki performed_by NOT NULL. Audit log untuk EXPIRE menggunakan actor_user_id = null.
+14. Mekanisme konkurensi: Operasi deposit dan redeem mengunci baris order terkait (SELECT ... FOR UPDATE) terlebih dahulu. Settlement payment meng-UPDATE baris orders yang sama, sehingga secara mekanis terserialisasi di belakang lock tersebut. Keterbatasan yang diketahui: tidak ada pengujian balapan payment-vs-redeem yang ditambahkan, konsisten dengan dokumentasi keterbatasan pada Phase 6.
+
 ---
 
 ## ADR-021 — Phase 5C VOID dan SERVE

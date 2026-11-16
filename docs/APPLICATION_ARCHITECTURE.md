@@ -134,7 +134,7 @@ DTO in/out (validasi)                                   JdbcTemplate
 | Venue / tables | **IMPLEMENTED (Phase 4D):** `/api/v1/tables`. **Phase 5A guard:** manual release or delete is blocked while an active order exists. |
 | Order | **IMPLEMENTED (Phase 5A):** `POST /api/v1/orders` requires `Idempotency-Key` (UUID); same key and payload replays the original 201 response snapshot, while a changed payload returns 422. `GET /api/v1/orders/{id}`; roles ADMIN, MANAGER, CASHIER; access outside the user's venue returns 404. **IMPLEMENTED (Phase 5B):** `POST /api/v1/orders/{id}/items` (Stock-at-Order deduction, Idempotency-Key, order totals recalculation). **IMPLEMENTED (Phase 5C):** `POST /api/v1/orders/{id}/void` (whole-order VOID), `POST /api/v1/orders/{id}/items/{itemId}/serve` (per-item SERVE). |
 | Payment | `POST /api/v1/orders/{id}/payments` (CASH, CARD_EDC, QRIS implemented; path documented in `openapi.yaml`); `GET /api/v1/payments/{paymentId}` (implemented; roles ADMIN, MANAGER, CASHIER; unknown or cross-venue id → 404; documented in `openapi.yaml`); `POST /api/v1/webhooks/xendit` (token verification + Status API verification implemented; not described in `openapi.yaml`; provider contract and M4 behavior in ADR-022) |
-| Bottle | `POST /api/v1/bottles` (deposit, `Idempotency-Key`), `POST /api/v1/bottles/redeem`, `GET /api/v1/bottles`, `GET /api/v1/customers/me/bottles` |
+| Bottle | `POST /api/v1/bottles` (deposit, `Idempotency-Key`, roles ADMIN/MANAGER/CASHIER), `POST /api/v1/bottles/redeem` (roles ADMIN/MANAGER/CASHIER), `GET /api/v1/bottles` (roles ADMIN/MANAGER/CASHIER), `GET /api/v1/customers/me/bottles` (role CUSTOMER only; JWT sub -> customers.user_id, exclude staff) |
 | Shift | `POST /api/v1/shifts` (Phase 6 implemented: open shift, one OPEN per cashier, stale OPEN → `MANAGER_REVIEW` + audit; documented in `openapi.yaml`); `POST /api/v1/shifts/{id}/submit` dan `POST /api/v1/shifts/{id}/review` (Phase 8, not implemented); tidak ada endpoint `GET` daftar shift |
 | Forecast | `POST /api/v1/forecasts`, `GET /api/v1/forecasts` |
 | Chat | `POST /api/v1/chat` (anonim diperbolehkan, rate-limited) |
@@ -278,23 +278,34 @@ Pengembalian dibaca dari ledger, bukan dari recipe saat ini (ADR-004).
 
 ### 7.5 Bottle: deposit dan redeem
 
-Deposit (`Idempotency-Key`; item produk `is_bottle_keepable` dengan `quantity = 1` pada order `PAID`, customer `age_verified`, item belum punya vault karena `source_order_item_id` UNIQUE, BR-29): buat vault `ACTIVE`, buat token acak 128-bit, simpan hash SHA-256, kembalikan token mentah **sekali**, tulis `DEPOSIT`.
+Deposit (`Idempotency-Key`; item produk `is_bottle_keepable` dengan `quantity = 1` pada order `PAID`, customer `age_verified`, item belum punya vault karena `source_order_item_id` UNIQUE, BR-29, item_type `PRODUCT`, item status bukan `VOIDED`, D11):
+- Customer pemilik botol diambil strictly dari `order.customer_id`. Walk-in order tanpa customer (`order.customer_id IS NULL`) ditolak (422 `CUSTOMER_REQUIRED`) dan tidak dapat deposit pada versi ini.
+- Operasi mengunci baris order terkait (`FOR UPDATE`) terlebih dahulu.
+- Buat vault `ACTIVE`, buat token acak 128-bit, simpan hash SHA-256 (`qr_token_hash`), kembalikan token mentah **sekali**, tulis `DEPOSIT` (`performed_by = actor`).
+- `expiry_date` dihitung: business date deposit + 30 hari (konfigurasi D7). Botol dapat di-redeem sepanjang hari expiry_date; kedaluwarsa bila `businessDate > expiry_date`.
+- Replay deposit mengembalikan data vault tanpa token mentah. Request kedua dengan key berbeda untuk item yang sama ditolak dengan pesan detail `VAULT_ALREADY_EXISTS` (HTTP 409).
+- Format respon error adalah RFC 7807 ProblemDetail tanpa field kode mesin; `VAULT_ALREADY_EXISTS` muncul sebagai teks pesan dalam `detail`.
 
 Redeem (`Idempotency-Key`; body: `qrToken`, `orderId`, `volumeMl`, `ownerConfirmed`):
 
 ```text
-1. Cari vault dari hash(qrToken); order.customer_id harus = vault.customer_id; ownerConfirmed = true
-2. Tambah order_item BOTTLE_REDEMPTION (harga 0 atau biaya layanan; tanpa pemotongan inventory)
-3. UPDATE bottle_vaults
+1. Kunci order row FOR UPDATE; periksa status OPEN atau PARTIALLY_PAID (D4), periksa order.total_due > 0 (D9; 422 bila <= 0, tanpa endpoint close).
+2. Cari vault dari hash(qrToken); periksa vault.venue_id == order.venue_id (D8), order.customer_id harus = vault.customer_id; ownerConfirmed wajib true (422 jika false).
+3. Tambah order_item BOTTLE_REDEMPTION lewat jalur DEDICATED (bypassing addItems, tanpa pemotongan inventory/resep; D5, D10: harga 0, line_total 0).
+4. UPDATE bottle_vaults
       SET remaining_volume_ml = remaining_volume_ml - :ml,
           status = CASE WHEN remaining_volume_ml - :ml = 0 THEN 'EMPTY' ELSE status END,
           version = version + 1
     WHERE id = :id AND status = 'ACTIVE'
       AND expiry_date >= :businessDate AND remaining_volume_ml >= :ml;
    rows = 0 -> 409 (habis / kedaluwarsa / tidak aktif), rollback
-4. INSERT bottle_vault_transactions (REDEEM, -ml, remaining_after, owner_confirmed, performed_by)
+5. INSERT bottle_vault_transactions (REDEEM, -ml, remaining_after, owner_confirmed, performed_by)
 ```
 Ini bukan autentikasi kuat (ADR-020).
+
+Kompensasi VOID (D3): `OrderLifecycleService.voidOrder` mengunci baris order terlebih dahulu. Jika order memuat item `BOTTLE_REDEMPTION`, void langsung ditolak dengan HTTP 409 Conflict sebelum proses restore atau mutasi stok, terlepas dari disposition RESTORED atau WASTED. Reservasi idempotency di-rollback. Tidak ada kompensasi vault volume pada void.
+
+Isolasi Otorisasi: Seluruh endpoint staf (`/api/v1/bottles/**`) mengecualikan role `CUSTOMER` (hanya `ADMIN`, `MANAGER`, `CASHIER`) dan diverifikasi terhadap venue penugasan via `VenueAccessService`. Endpoint `GET /api/v1/customers/me/bottles` hanya mengizinkan role `CUSTOMER` dan memetakan JWT `sub` langsung ke `customers.user_id`.
 
 ### 7.6 Shift dan cutoff
 
