@@ -58,6 +58,36 @@ public class BottleRepository {
         return findBottles("bv.customer_id", customerId, status, null, size, offset);
     }
 
+    public List<VenueExpiryContext> findActiveVenuesForExpiry() {
+        return jdbc.query("""
+                SELECT id, timezone, business_day_cutoff_hour
+                FROM venues
+                WHERE is_active = true
+                ORDER BY id
+                """, (rs, row) -> new VenueExpiryContext(
+                rs.getLong("id"), rs.getString("timezone"), rs.getInt("business_day_cutoff_hour")));
+    }
+
+    public List<ExpiredVault> expireActiveVaults(long venueId, LocalDate businessDate, Instant now) {
+        return jdbc.query("""
+                UPDATE bottle_vaults
+                SET status = 'EXPIRED', updated_at = ?, version = version + 1
+                WHERE venue_id = ? AND status = 'ACTIVE' AND expiry_date < ?
+                RETURNING id, remaining_volume_ml
+                """, (rs, row) -> new ExpiredVault(rs.getLong("id"), rs.getInt("remaining_volume_ml")),
+                Timestamp.from(now), venueId, Date.valueOf(businessDate));
+    }
+
+    public void insertExpiryTransaction(long vaultId, int remainingVolumeMl, Instant now) {
+        jdbc.update("""
+                INSERT INTO bottle_vault_transactions (
+                    vault_id, type, volume_delta_ml, remaining_after_ml, order_item_id,
+                    owner_confirmed, performed_by, note, created_at
+                )
+                VALUES (?, 'EXPIRE', 0, ?, NULL, false, NULL, 'Bottle expired after expiry date', ?)
+                """, vaultId, remainingVolumeMl, Timestamp.from(now));
+    }
+
     private List<BottleQueryResponse> findBottles(
             String scopeColumn, long scopeId, String status, Long customerId, int size, long offset) {
         StringBuilder sql = new StringBuilder("""
@@ -266,5 +296,9 @@ public class BottleRepository {
             String status,
             LocalDate expiryDate
     ) {}
+
+    public record VenueExpiryContext(long id, String timezone, int businessDayCutoffHour) {}
+
+    public record ExpiredVault(long id, int remainingVolumeMl) {}
 }
 

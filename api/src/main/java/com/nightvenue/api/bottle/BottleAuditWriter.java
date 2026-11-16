@@ -62,6 +62,12 @@ public class BottleAuditWriter {
         write(venueId, actorId, "BOTTLE_REDEEM", "BOTTLE_VAULT", vaultId, details, now);
     }
 
+    public void bottleExpired(long venueId, long vaultId, int remainingVolumeMl, Instant now) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("remaining_volume_ml", remainingVolumeMl);
+        write(venueId, null, "BOTTLE_EXPIRE", "BOTTLE_VAULT", vaultId, details, now);
+    }
+
     private void write(
             long venueId,
             Long actorId,
