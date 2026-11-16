@@ -9,6 +9,8 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -44,6 +46,51 @@ public class BottleRepository {
     public Optional<Long> findCustomerIdByUserId(long userId) {
         return jdbc.query("SELECT id FROM customers WHERE user_id = ?", (rs, row) -> rs.getLong("id"), userId)
                 .stream().findFirst();
+    }
+
+    public List<BottleQueryResponse> findBottlesForVenue(
+            long venueId, String status, Long customerId, int size, long offset) {
+        return findBottles("bv.venue_id", venueId, status, customerId, size, offset);
+    }
+
+    public List<BottleQueryResponse> findBottlesForCustomer(
+            long customerId, String status, int size, long offset) {
+        return findBottles("bv.customer_id", customerId, status, null, size, offset);
+    }
+
+    private List<BottleQueryResponse> findBottles(
+            String scopeColumn, long scopeId, String status, Long customerId, int size, long offset) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT bv.id, bv.label_code, bv.venue_id, bv.customer_id, bv.product_id, p.name AS product_name,
+                       bv.original_volume_ml, bv.remaining_volume_ml, bv.stored_at, bv.expiry_date, bv.status
+                FROM bottle_vaults bv
+                JOIN products p ON p.id = bv.product_id
+                """).append(" WHERE ").append(scopeColumn).append(" = ?");
+        List<Object> params = new ArrayList<>();
+        params.add(scopeId);
+        if (status != null) {
+            sql.append(" AND bv.status = ?");
+            params.add(status);
+        }
+        if (customerId != null) {
+            sql.append(" AND bv.customer_id = ?");
+            params.add(customerId);
+        }
+        sql.append(" ORDER BY bv.stored_at DESC, bv.id DESC LIMIT ? OFFSET ?");
+        params.add(size);
+        params.add(offset);
+        return jdbc.query(sql.toString(), (rs, row) -> new BottleQueryResponse(
+                rs.getLong("id"),
+                rs.getString("label_code"),
+                rs.getLong("venue_id"),
+                rs.getLong("customer_id"),
+                rs.getLong("product_id"),
+                rs.getString("product_name"),
+                rs.getInt("original_volume_ml"),
+                rs.getInt("remaining_volume_ml"),
+                rs.getTimestamp("stored_at").toInstant(),
+                rs.getDate("expiry_date").toLocalDate(),
+                rs.getString("status")), params.toArray());
     }
 
     public Optional<RedeemVault> findByTokenHashForUpdate(String tokenHash) {
