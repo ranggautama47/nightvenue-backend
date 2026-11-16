@@ -29,6 +29,7 @@ import java.util.UUID;
 public class BottleService {
 
     public static final String SCOPE_DEPOSIT = "BOTTLE_DEPOSIT";
+    public static final String SCOPE_REDEEM = "BOTTLE_REDEEM";
     private static final String CONFLICT_VAULT_EXISTS = "VAULT_ALREADY_EXISTS";
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -248,6 +249,91 @@ public class BottleService {
                 vault.expiryDate(),
                 rawToken,
                 false);
+    }
+
+    @Transactional
+    public BottleRedeemResponse redeem(RedeemBottleRequest request, UUID idempotencyKey, String jwtSubject) {
+        long actorId = Long.parseLong(jwtSubject);
+        Instant now = clock.instant();
+        String requestHash = sha256Hex(request.qrToken() + "|" + request.orderId() + "|"
+                + request.volumeMl() + "|" + request.ownerConfirmed());
+
+        if (!idempotencyRepo.reserve(idempotencyKey, SCOPE_REDEEM, actorId, requestHash, now)) {
+            IdempotencyRepository.IdempotencyRow row = idempotencyRepo.find(idempotencyKey, SCOPE_REDEEM, actorId)
+                    .orElseThrow(() -> new IllegalStateException("Idempotency row disappeared between reserve and find"));
+            if (!requestHash.equals(row.requestHash())) {
+                throw new BusinessRuleViolation("Idempotency-Key reused with a different payload");
+            }
+            if (row.responseStatus() == null || row.responseBody() == null) {
+                throw new IllegalStateException("Idempotency record has no completed response yet");
+            }
+            if (row.responseStatus() != 201) {
+                throw new IllegalStateException("Idempotency record has an unexpected response status");
+            }
+            try {
+                return objectMapper.readValue(row.responseBody(), BottleRedeemResponse.class);
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to deserialize idempotency snapshot", e);
+            }
+        }
+
+        OrderRepository.Order order = orderRepository.findOrderForUpdate(request.orderId())
+                .orElseThrow(ResourceNotFound::new);
+        venueAccess.requireAccess(order.venueId());
+
+        String tokenHash = sha256Hex(request.qrToken());
+        BottleRepository.RedeemVault vault = bottleRepository.findByTokenHashForUpdate(tokenHash)
+                .orElseThrow(ResourceNotFound::new);
+        if (vault.venueId() != order.venueId()
+                || order.customerId() == null
+                || order.customerId() != vault.customerId()) {
+            throw new ResourceNotFound();
+        }
+        if (!request.ownerConfirmed()) {
+            throw new BusinessRuleViolation("Bottle owner confirmation is required");
+        }
+        if (!"OPEN".equals(order.status()) && !"PARTIALLY_PAID".equals(order.status())) {
+            throw new BusinessRuleViolation("Order does not accept bottle redemption");
+        }
+        if (order.totalDue() <= 0) {
+            throw new BusinessRuleViolation("Order total must be positive");
+        }
+        if (!"ACTIVE".equals(vault.status())) {
+            throw new BusinessRuleViolation("Bottle vault is not active");
+        }
+
+        OrderRepository.VenueContext venue = orderRepository.findVenueContext(order.venueId())
+                .orElseThrow(ResourceNotFound::new);
+        LocalDate businessDate = businessDates.businessDate(
+                now, ZoneId.of(venue.timezone()), venue.businessDayCutoffHour());
+        if (businessDate.isAfter(vault.expiryDate())) {
+            throw new BusinessRuleViolation("Bottle vault has expired");
+        }
+        if (request.volumeMl() > vault.remainingVolumeMl()) {
+            throw new BusinessRuleViolation("Redeem volume exceeds remaining bottle volume");
+        }
+
+        int remaining = vault.remainingVolumeMl() - request.volumeMl();
+        if (bottleRepository.redeem(vault.id(), request.volumeMl(), businessDate, now) != 1) {
+            throw new Conflict("Bottle vault changed during redemption");
+        }
+
+        OrderRepository.OrderItem item = orderRepository.insertBottleRedemptionOrderItem(
+                order.id(), vault.productId(), now);
+        bottleRepository.insertTransaction(vault.id(), item.id(), "REDEEM", -request.volumeMl(),
+                remaining, actorId, true, now);
+        auditWriter.bottleRedeemed(order.venueId(), actorId, vault.id(), order.id(), item.id(),
+                request.volumeMl(), remaining, now);
+
+        BottleRedeemResponse response = new BottleRedeemResponse(vault.id(), vault.labelCode(), order.id(),
+                item.id(), request.volumeMl(), remaining, remaining == 0 ? "EMPTY" : "ACTIVE");
+        try {
+            idempotencyRepo.complete(idempotencyKey, SCOPE_REDEEM, actorId, 201,
+                    objectMapper.writeValueAsString(response));
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to serialize idempotency snapshot", e);
+        }
+        return response;
     }
 
     private static String sha256Hex(String input) {

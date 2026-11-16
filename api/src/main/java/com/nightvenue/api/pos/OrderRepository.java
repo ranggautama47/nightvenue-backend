@@ -151,6 +151,31 @@ public class OrderRepository {
                 timestamp, timestamp);
     }
 
+    public OrderItem insertBottleRedemptionOrderItem(long orderId, long productId, Instant now) {
+        Timestamp timestamp = Timestamp.from(now);
+        return jdbc.queryForObject("""
+                INSERT INTO order_items (
+                    order_id, product_id, item_type, product_name_snapshot,
+                    unit_price_snapshot, quantity, line_total, status, created_at, updated_at
+                )
+                SELECT ?, p.id, 'BOTTLE_REDEMPTION', p.name, 0, 1, 0, 'SERVED', ?, ?
+                FROM products p
+                WHERE p.id = ?
+                RETURNING id, order_id, product_id, item_type, product_name_snapshot,
+                          unit_price_snapshot, quantity, line_total, status, created_at, updated_at
+                """, OrderRepository::mapOrderItem, orderId, timestamp, timestamp, productId);
+    }
+
+    public boolean hasBottleRedemptionItems(long orderId) {
+        Boolean exists = jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1 FROM order_items
+                    WHERE order_id = ? AND item_type = 'BOTTLE_REDEMPTION'
+                )
+                """, Boolean.class, orderId);
+        return Boolean.TRUE.equals(exists);
+    }
+
     public List<OrderItem> findOrderItems(long orderId) {
         return jdbc.query("""
                 SELECT id, order_id, product_id, item_type, product_name_snapshot,

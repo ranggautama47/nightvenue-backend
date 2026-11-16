@@ -41,6 +41,42 @@ public class BottleRepository {
                 rs.getBoolean("age_verified")), customerId).stream().findFirst();
     }
 
+    public Optional<Long> findCustomerIdByUserId(long userId) {
+        return jdbc.query("SELECT id FROM customers WHERE user_id = ?", (rs, row) -> rs.getLong("id"), userId)
+                .stream().findFirst();
+    }
+
+    public Optional<RedeemVault> findByTokenHashForUpdate(String tokenHash) {
+        return jdbc.query("""
+                SELECT id, venue_id, customer_id, product_id, label_code, remaining_volume_ml,
+                       status, expiry_date
+                FROM bottle_vaults
+                WHERE qr_token_hash = ?
+                FOR UPDATE
+                """, (rs, rowNum) -> new RedeemVault(
+                rs.getLong("id"),
+                rs.getLong("venue_id"),
+                rs.getLong("customer_id"),
+                rs.getLong("product_id"),
+                rs.getString("label_code"),
+                rs.getInt("remaining_volume_ml"),
+                rs.getString("status"),
+                rs.getDate("expiry_date").toLocalDate()), tokenHash).stream().findFirst();
+    }
+
+    public int redeem(long vaultId, int volumeMl, LocalDate businessDate, Instant now) {
+        return jdbc.update("""
+                UPDATE bottle_vaults
+                SET remaining_volume_ml = remaining_volume_ml - ?,
+                    status = CASE WHEN remaining_volume_ml - ? = 0 THEN 'EMPTY' ELSE status END,
+                    version = version + 1,
+                    updated_at = ?
+                WHERE id = ? AND status = 'ACTIVE'
+                  AND expiry_date >= ? AND remaining_volume_ml >= ?
+                """, volumeMl, volumeMl, Timestamp.from(now), vaultId,
+                Date.valueOf(businessDate), volumeMl);
+    }
+
     public Optional<OrderItemProductInfo> findOrderItemProductInfo(long orderItemId) {
         return jdbc.query("""
                 SELECT oi.id, oi.order_id, oi.product_id, oi.item_type, oi.quantity, oi.status,
@@ -170,6 +206,17 @@ public class BottleRepository {
             int remainingVolumeMl,
             String status,
             Instant storedAt,
+            LocalDate expiryDate
+    ) {}
+
+    public record RedeemVault(
+            long id,
+            long venueId,
+            long customerId,
+            long productId,
+            String labelCode,
+            int remainingVolumeMl,
+            String status,
             LocalDate expiryDate
     ) {}
 }

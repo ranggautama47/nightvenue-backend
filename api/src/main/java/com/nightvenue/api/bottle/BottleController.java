@@ -5,7 +5,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -16,7 +15,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 @RestController
-@Validated
 @RequestMapping("/api/v1/bottles")
 public class BottleController {
 
@@ -34,6 +32,16 @@ public class BottleController {
             @RequestHeader("Idempotency-Key") UUID idempotencyKey,
             @AuthenticationPrincipal Jwt jwt) {
         return bottleService.deposit(request, idempotencyKey, jwt.getSubject());
+    }
+
+    @PostMapping("/redeem")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    @ResponseStatus(HttpStatus.CREATED)
+    public BottleRedeemResponse redeem(
+            @Valid @RequestBody RedeemBottleRequest request,
+            @RequestHeader("Idempotency-Key") UUID idempotencyKey,
+            @AuthenticationPrincipal Jwt jwt) {
+        return bottleService.redeem(request, idempotencyKey, jwt.getSubject());
     }
 }
 

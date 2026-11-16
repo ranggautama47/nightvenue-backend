@@ -409,6 +409,33 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /bottles/redeem:
+    post:
+      summary: Redeem bottle volume into an order
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RedeemBottleRequest" }
+      responses:
+        "201":
+          description: Bottle volume redeemed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BottleRedeemResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Role not permitted }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Concurrent bottle state conflict }
+        "422": { description: Business rule violation }
 components:
   securitySchemes:
     bearerAuth:
@@ -649,6 +676,25 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/VoidedItem" }
+    RedeemBottleRequest:
+      type: object
+      required: [qrToken, orderId, volumeMl, ownerConfirmed]
+      properties:
+        qrToken: { type: string, minLength: 1 }
+        orderId: { type: integer, format: int64, minimum: 1 }
+        volumeMl: { type: integer, format: int32, minimum: 1 }
+        ownerConfirmed: { type: boolean }
+    BottleRedeemResponse:
+      type: object
+      required: [vaultId, labelCode, orderId, orderItemId, redeemedVolumeMl, remainingVolumeMl, vaultStatus]
+      properties:
+        vaultId: { type: integer, format: int64 }
+        labelCode: { type: string }
+        orderId: { type: integer, format: int64 }
+        orderItemId: { type: integer, format: int64 }
+        redeemedVolumeMl: { type: integer, format: int32 }
+        remainingVolumeMl: { type: integer, format: int32 }
+        vaultStatus: { type: string, enum: [ACTIVE, EMPTY] }
     BottleVault:
       type: object
       required: [vaultId, labelCode, productId, venueId, customerId, originalVolumeMl, remainingVolumeMl, status, storedAt, expiryDate, tokenAlreadyIssued]
