@@ -39,4 +39,11 @@ public class ShiftController {
         if (outcome.stale()) throw new Conflict("SHIFT_NOT_OPEN");
         return outcome.view();
     }
+
+    @PostMapping("/{id}/review")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ShiftReviewView reviewShift(@PathVariable long id, @Valid @RequestBody ReviewShiftRequest request,
+                                       @AuthenticationPrincipal Jwt jwt) {
+        return shifts.reviewShift(id, request, jwt.getSubject());
+    }
 }

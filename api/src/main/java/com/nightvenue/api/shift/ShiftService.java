@@ -131,5 +131,70 @@ public class ShiftService {
         }
     }
 
+    @Transactional
+    public ShiftReviewView reviewShift(long shiftId, ReviewShiftRequest request, String jwtSubject) {
+        long reviewerId = Long.parseLong(jwtSubject);
+        CashierShift found = shifts.findById(shiftId).orElseThrow(ResourceNotFound::new);
+        requireVenueAccess(found.venueId());
+        if (found.cashierId() == reviewerId) throw new AccessDeniedException("A shift owner cannot review their shift");
+
+        CashierShift locked = shifts.lockById(shiftId).orElseThrow(ResourceNotFound::new);
+        if (locked.venueId() != found.venueId()) throw new ResourceNotFound();
+        requireVenueAccess(locked.venueId());
+        if (locked.cashierId() == reviewerId) throw new AccessDeniedException("A shift owner cannot review their shift");
+        if (locked.status() != CashierShiftStatus.SUBMITTED && locked.status() != CashierShiftStatus.MANAGER_REVIEW)
+            throw new Conflict("SHIFT_NOT_REVIEWABLE");
+
+        String note = request.note() == null ? null : request.note().strip();
+        if (note != null && note.isEmpty()) note = null;
+        long expectedCash;
+        long actualCash;
+        long variance;
+        CashierShiftStatus sourceStatus = locked.status();
+        Instant reviewedAt = clock.instant();
+        if (sourceStatus == CashierShiftStatus.SUBMITTED) {
+            if (request.actualCash() != null) throw new BusinessRuleViolation("ACTUAL_CASH_NOT_ALLOWED");
+            ShiftRepository.ReviewData values = shifts.reviewData(locked.id()).orElseThrow(ResourceNotFound::new);
+            if (values.expectedCash() == null || values.actualCash() == null || values.variance() == null)
+                throw new Conflict("SHIFT_NOT_REVIEWABLE");
+            expectedCash = values.expectedCash();
+            actualCash = values.actualCash();
+            variance = values.variance();
+            requireReviewNote(note, variance != 0 || locked.forcedReviewAt() != null);
+            if (shifts.reconcileSubmitted(locked.id(), reviewerId, note, reviewedAt) != 1)
+                throw new IllegalStateException("Expected to reconcile one submitted shift");
+        } else {
+            if (request.actualCash() == null) throw new BusinessRuleViolation("ACTUAL_CASH_REQUIRED");
+            try {
+                expectedCash = Math.addExact(locked.openingFloat(), shifts.sumPaidCash(locked.id()).longValueExact());
+                actualCash = request.actualCash();
+                variance = Math.subtractExact(actualCash, expectedCash);
+            } catch (ArithmeticException e) {
+                throw new BusinessRuleViolation("SHIFT_CASH_TOTAL_OVERFLOW");
+            }
+            requireReviewNote(note, variance != 0 || locked.forcedReviewAt() != null);
+            if (shifts.reconcileManagerReview(locked.id(), reviewerId, expectedCash, actualCash, variance,
+                    note, reviewedAt) != 1)
+                throw new IllegalStateException("Expected to reconcile one manager-review shift");
+        }
+
+        audit.shiftReconciled(locked.venueId(), reviewerId, locked.id(), sourceStatus.name(),
+                expectedCash, actualCash, variance, reviewedAt);
+        return shifts.findReviewView(locked.id()).orElseThrow(ResourceNotFound::new);
+    }
+
+    private void requireVenueAccess(long venueId) {
+        try {
+            venues.requireAccess(venueId);
+        } catch (VenueNotFound e) {
+            throw new ResourceNotFound();
+        }
+    }
+
+    private static void requireReviewNote(String note, boolean required) {
+        if (required && (note == null || note.isBlank()))
+            throw new BusinessRuleViolation("REVIEW_NOTE_REQUIRED");
+    }
+
     public record SubmitShiftOutcome(ShiftSubmissionView view, boolean stale) {}
 }

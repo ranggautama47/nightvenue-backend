@@ -56,6 +56,59 @@ public class ShiftRepository {
                 """, timestamp, expectedCash, actualCash, variance, note, timestamp, shiftId);
     }
 
+    public Optional<ReviewData> reviewData(long shiftId) {
+        return jdbc.query("""
+                SELECT expected_cash, actual_cash, variance
+                FROM cashier_shifts WHERE id = ?
+                """, (rs, row) -> new ReviewData(
+                (Long) rs.getObject("expected_cash"), (Long) rs.getObject("actual_cash"),
+                (Long) rs.getObject("variance")), shiftId)
+                .stream().findFirst();
+    }
+
+    public Optional<ShiftReviewView> findReviewView(long shiftId) {
+        return jdbc.query("""
+                SELECT id, venue_id, cashier_id, business_date, status, opening_float,
+                       submitted_at, expected_cash, actual_cash, variance, submit_note,
+                       review_note, reviewed_by, reviewed_at, forced_review_at
+                FROM cashier_shifts WHERE id = ?
+                """, (rs, row) -> {
+            Timestamp submittedAt = rs.getTimestamp("submitted_at");
+            Timestamp reviewedAt = rs.getTimestamp("reviewed_at");
+            Timestamp forcedReviewAt = rs.getTimestamp("forced_review_at");
+            return new ShiftReviewView(rs.getLong("id"), rs.getLong("venue_id"), rs.getLong("cashier_id"),
+                    rs.getObject("business_date", LocalDate.class), CashierShiftStatus.valueOf(rs.getString("status")),
+                    rs.getLong("opening_float"), submittedAt == null ? null : submittedAt.toInstant(),
+                    rs.getLong("expected_cash"), rs.getLong("actual_cash"), rs.getLong("variance"),
+                    rs.getString("submit_note"), rs.getString("review_note"), rs.getLong("reviewed_by"),
+                    reviewedAt == null ? null : reviewedAt.toInstant(),
+                    forcedReviewAt == null ? null : forcedReviewAt.toInstant());
+        }, shiftId).stream().findFirst();
+    }
+
+    public int reconcileSubmitted(long shiftId, long reviewerId, String reviewNote, Instant reviewedAt) {
+        Timestamp timestamp = Timestamp.from(reviewedAt);
+        return jdbc.update("""
+                UPDATE cashier_shifts
+                SET status = 'RECONCILED', reviewed_by = ?, reviewed_at = ?, review_note = ?,
+                    updated_at = ?, version = version + 1
+                WHERE id = ? AND status = 'SUBMITTED'
+                """, reviewerId, timestamp, reviewNote, timestamp, shiftId);
+    }
+
+    public int reconcileManagerReview(long shiftId, long reviewerId, long expectedCash, long actualCash,
+                                     long variance, String reviewNote, Instant reviewedAt) {
+        Timestamp timestamp = Timestamp.from(reviewedAt);
+        return jdbc.update("""
+                UPDATE cashier_shifts
+                SET status = 'RECONCILED', reviewed_by = ?, reviewed_at = ?, review_note = ?,
+                    expected_cash = ?, actual_cash = ?, variance = ?, updated_at = ?, version = version + 1
+                WHERE id = ? AND status = 'MANAGER_REVIEW'
+                """, reviewerId, timestamp, reviewNote, expectedCash, actualCash, variance, timestamp, shiftId);
+    }
+
+    public record ReviewData(Long expectedCash, Long actualCash, Long variance) {}
+
     public Optional<CashierShift> lockOpenShiftByCashier(long cashierId) {
         return jdbc.query("SELECT " + COLUMNS + " FROM cashier_shifts WHERE cashier_id = ? AND status = 'OPEN' FOR UPDATE",
                         ShiftRepository::map, cashierId)
