@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -182,4 +183,31 @@ public class ShiftRepository {
                 forcedReviewAt == null ? null : forcedReviewAt.toInstant(), rs.getLong("version"),
                 rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant());
     }
+
+    public List<Long> findVenuesWithOpenShifts() {
+        return jdbc.query("SELECT DISTINCT venue_id FROM cashier_shifts WHERE status = 'OPEN' ORDER BY venue_id",
+                (rs, rowNum) -> rs.getLong("venue_id"));
+    }
+
+    public List<StaleShiftCandidate> findStaleOpenShifts(long venueId, LocalDate cutoffBusinessDate) {
+        return jdbc.query("""
+                SELECT id, business_date
+                FROM cashier_shifts
+                WHERE venue_id = ? AND status = 'OPEN' AND business_date < ?
+                ORDER BY id
+                """, (rs, rowNum) -> new StaleShiftCandidate(
+                rs.getLong("id"), rs.getObject("business_date", LocalDate.class)),
+                venueId, java.sql.Date.valueOf(cutoffBusinessDate));
+    }
+
+    public int markStaleShiftForReviewById(long shiftId, LocalDate cutoffBusinessDate, Instant forcedReviewAt) {
+        Timestamp timestamp = Timestamp.from(forcedReviewAt);
+        return jdbc.update("""
+                UPDATE cashier_shifts
+                SET status = 'MANAGER_REVIEW', forced_review_at = ?, updated_at = ?, version = version + 1
+                WHERE id = ? AND status = 'OPEN' AND business_date < ?
+                """, timestamp, timestamp, shiftId, java.sql.Date.valueOf(cutoffBusinessDate));
+    }
+
+    public record StaleShiftCandidate(long id, LocalDate businessDate) {}
 }

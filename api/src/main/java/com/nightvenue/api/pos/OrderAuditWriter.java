@@ -59,6 +59,10 @@ public class OrderAuditWriter {
         write(venueId, actorId, "SHIFT_FORCED_REVIEW", "CASHIER_SHIFT", shiftId, Map.of("business_date", businessDate.toString()), now);
     }
 
+    public void shiftForcedReviewBySystem(long venueId, long shiftId, LocalDate businessDate, Instant now) {
+        write(venueId, null, "SHIFT_FORCED_REVIEW", "CASHIER_SHIFT", shiftId, Map.of("business_date", businessDate.toString()), now);
+    }
+
     public void shiftSubmitted(long venueId, long actorId, long shiftId, long expectedCash,
                               long actualCash, long variance, Instant now) {
         write(venueId, actorId, "SHIFT_SUBMITTED", "CASHIER_SHIFT", shiftId,
