@@ -266,10 +266,11 @@ class ShiftReconciliationMigrationTests {
     private static Fixture fixture(String schema) {
         String suffix = UUID.randomUUID().toString().replace("-", "");
         Timestamp now = Timestamp.from(Instant.now());
+        String venueCode = "V" + suffix.substring(0, 29);
         long venueId = jdbc.queryForObject(("""
                 INSERT INTO %s.venues (code,name,timezone,business_day_cutoff_hour,is_active,created_at,updated_at)
                 VALUES (?, ?, 'Asia/Jakarta', 6, true, ?, ?) RETURNING id
-                """).formatted(schema), Long.class, "V" + suffix, "Venue " + suffix, now, now);
+                """).formatted(schema), Long.class, venueCode, "Venue " + suffix, now, now);
         long cashierId = insertUser(schema, suffix + "-c@test.local", "CASHIER", now);
         long otherCashierId = insertUser(schema, suffix + "-c2@test.local", "CASHIER", now);
         long reviewerId = insertUser(schema, suffix + "-m@test.local", "MANAGER", now);

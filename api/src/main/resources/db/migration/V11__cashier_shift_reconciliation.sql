@@ -7,13 +7,6 @@ ALTER TABLE cashier_shifts
     ADD COLUMN reviewed_by BIGINT REFERENCES users(id) ON DELETE RESTRICT,
     ADD COLUMN reviewed_at TIMESTAMPTZ,
     ADD COLUMN review_note VARCHAR(255),
-    ADD CONSTRAINT ck_cashier_shifts_submission CHECK (
-        status <> 'SUBMITTED'
-        OR (submitted_at IS NOT NULL
-            AND expected_cash IS NOT NULL
-            AND actual_cash IS NOT NULL
-            AND variance IS NOT NULL)
-    ),
     ADD CONSTRAINT ck_cashier_shifts_reconciliation_values CHECK (
         (expected_cash IS NULL AND actual_cash IS NULL AND variance IS NULL)
         OR (expected_cash IS NOT NULL AND actual_cash IS NOT NULL AND variance IS NOT NULL
