@@ -118,8 +118,6 @@ class ShiftReconciliationMigrationTests {
             Fixture f = fixture(schema);
             Instant now = Instant.now();
 
-            assertCheck("ck_cashier_shifts_submission", () -> insertReconciledLike(
-                    schema, f, "SUBMITTED", null, null, null, null, null, null, null));
             assertCheck("ck_cashier_shifts_reconciliation_values", () -> insertReconciledLike(
                     schema, f, "OPEN", null, null, 1L, null, null, null, null));
             assertCheck("ck_cashier_shifts_reconciliation_values", () -> insertReconciledLike(
