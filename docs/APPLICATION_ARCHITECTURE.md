@@ -345,6 +345,8 @@ flowchart TD
 
 **Status implementasi Phase 6.** `ShiftService.openShift` memeriksa shift OPEN milik kasir. Bila `business_date` shift tersebut sama atau lebih baru daripada current business date venue shift itu, request ditolak 409 `SHIFT_ALREADY_OPEN`. Bila shift tersebut lebih lama, `ShiftRepository.markStaleShiftForReview` melakukan transisi `OPEN` → `MANAGER_REVIEW` dengan `forced_review_at` dan audit, lalu shift baru dibuat secara atomik. Transisi ini berjalan di jalur request, bukan scheduled job. Scheduled cutoff job serta seluruh alur submit/variance/manager review/`RECONCILED` tetap Phase 8 dan belum diimplementasikan; ADR-002 tetap target desainnya.
 
+Phase 8 cutoff scheduler defaults to disabled (`nightvenue.shift.cutoff.enabled=false`). Each actual deployment must explicitly set `NIGHTVENUE_SHIFT_CUTOFF_ENABLED=true`; tests should call the cutoff service directly and must not start the scheduler.
+
 Semua role yang menerima CASH memakai shift miliknya sendiri, dan reviewer tidak boleh pemilik shift yang direview (BR-30).
 
 ### 7.7 Hybrid chat

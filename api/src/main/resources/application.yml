@@ -23,6 +23,9 @@ spring:
       enabled: true
 
 nightvenue:
+  shift:
+    cutoff:
+      enabled: ${NIGHTVENUE_SHIFT_CUTOFF_ENABLED:false}
   seed:
     enabled: false
   payment:
