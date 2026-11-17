@@ -3,6 +3,7 @@ package com.nightvenue.api.shift;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -25,6 +26,34 @@ public class ShiftRepository {
         return jdbc.query("SELECT " + COLUMNS + " FROM cashier_shifts WHERE cashier_id = ? AND status = 'OPEN'",
                         ShiftRepository::map, cashierId)
                 .stream().findFirst();
+    }
+
+    public Optional<CashierShift> findById(long shiftId) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM cashier_shifts WHERE id = ?", ShiftRepository::map, shiftId)
+                .stream().findFirst();
+    }
+
+    public Optional<CashierShift> lockById(long shiftId) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM cashier_shifts WHERE id = ? FOR UPDATE", ShiftRepository::map, shiftId)
+                .stream().findFirst();
+    }
+
+    public BigDecimal sumPaidCash(long shiftId) {
+        return jdbc.queryForObject("""
+                SELECT COALESCE(SUM(amount), 0) FROM payments
+                WHERE shift_id = ? AND method = 'CASH' AND status = 'PAID'
+                """, BigDecimal.class, shiftId);
+    }
+
+    public int markSubmitted(long shiftId, long expectedCash, long actualCash, long variance,
+                             String note, Instant submittedAt) {
+        Timestamp timestamp = Timestamp.from(submittedAt);
+        return jdbc.update("""
+                UPDATE cashier_shifts
+                SET status = 'SUBMITTED', submitted_at = ?, expected_cash = ?, actual_cash = ?, variance = ?,
+                    submit_note = ?, updated_at = ?, version = version + 1
+                WHERE id = ? AND status = 'OPEN'
+                """, timestamp, expectedCash, actualCash, variance, note, timestamp, shiftId);
     }
 
     public Optional<CashierShift> lockOpenShiftByCashier(long cashierId) {

@@ -59,6 +59,12 @@ public class OrderAuditWriter {
         write(venueId, actorId, "SHIFT_FORCED_REVIEW", "CASHIER_SHIFT", shiftId, Map.of("business_date", businessDate.toString()), now);
     }
 
+    public void shiftSubmitted(long venueId, long actorId, long shiftId, long expectedCash,
+                              long actualCash, long variance, Instant now) {
+        write(venueId, actorId, "SHIFT_SUBMITTED", "CASHIER_SHIFT", shiftId,
+                Map.of("expectedCash", expectedCash, "actualCash", actualCash, "variance", variance), now);
+    }
+
     public void anomaly(long venueId, String action, String entityType, long entityId,
                         Map<String, ?> details, Instant now) {
         write(venueId, null, action, entityType, entityId, details, now);

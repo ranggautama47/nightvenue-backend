@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PathVariable;
+import com.nightvenue.api.common.Conflict;
 
 @RestController
 @RequestMapping("/api/v1/shifts")
@@ -27,5 +29,14 @@ public class ShiftController {
             @Valid @RequestBody OpenShiftRequest request,
             @AuthenticationPrincipal Jwt jwt) {
         return shifts.openShift(request, jwt.getSubject());
+    }
+
+    @PostMapping("/{id}/submit")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    public ShiftSubmissionView submitShift(@PathVariable long id, @Valid @RequestBody SubmitShiftRequest request,
+                                           @AuthenticationPrincipal Jwt jwt) {
+        ShiftService.SubmitShiftOutcome outcome = shifts.submitShift(id, request, jwt.getSubject());
+        if (outcome.stale()) throw new Conflict("SHIFT_NOT_OPEN");
+        return outcome.view();
     }
 }
