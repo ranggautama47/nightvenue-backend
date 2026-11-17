@@ -119,29 +119,30 @@ class ShiftReconciliationMigrationTests {
             Instant now = Instant.now();
 
             assertCheck("ck_cashier_shifts_reconciliation_values", () -> insertReconciledLike(
-                    schema, f, "OPEN", null, null, 1L, null, null, null, null));
+                    schema, f, "SUBMITTED", null, null, 1L, null, null, null, null));
             assertCheck("ck_cashier_shifts_reconciliation_values", () -> insertReconciledLike(
-                    schema, f, "OPEN", null, null, 100L, 120L, 19L, null, null));
+                    schema, f, "SUBMITTED", null, null, 100L, 120L, 19L, null, null));
             assertCheck("ck_cashier_shifts_expected_cash_nonnegative", () -> insertReconciledLike(
-                    schema, f, "OPEN", null, null, -1L, 0L, 1L, null, null));
+                    schema, f, "SUBMITTED", null, null, -1L, 0L, 1L, null, null));
             assertCheck("ck_cashier_shifts_actual_cash_nonnegative", () -> insertReconciledLike(
-                    schema, f, "OPEN", null, null, 0L, -1L, -1L, null, null));
+                    schema, f, "SUBMITTED", null, null, 0L, -1L, -1L, null, null));
             assertCheck("ck_cashier_shifts_reviewed_by_not_owner", () -> insertReconciledLike(
                     schema, f, "RECONCILED", now, now, 1L, 1L, 0L, f.cashierId, null));
             assertCheck("ck_cashier_shifts_reconciled", () -> insertReconciledLike(
                     schema, f, "RECONCILED", now, now, 1L, 1L, 0L, null, null));
 
-            long openShift = insertLegacyShift(schema, f.venueId, f.cashierId, "OPEN", null);
+            long submittedShift = insertReconciledLike(schema, f, "SUBMITTED",
+                    now, null, 1L, 1L, 0L, null, null);
             for (String column : new String[]{"reviewed_by", "reviewed_at", "review_note"}) {
                 assertCheck("ck_cashier_shifts_review_fields_only_when_reconciled", () -> {
                     if (column.equals("reviewed_by")) {
                         jdbc.update("UPDATE " + schema + ".cashier_shifts SET reviewed_by=? WHERE id=?",
-                                f.reviewerId, openShift);
+                                f.reviewerId, submittedShift);
                     } else if (column.equals("reviewed_at")) {
                         jdbc.update("UPDATE " + schema + ".cashier_shifts SET reviewed_at=? WHERE id=?",
-                                Timestamp.from(now), openShift);
+                                Timestamp.from(now), submittedShift);
                     } else {
-                        jdbc.update("UPDATE " + schema + ".cashier_shifts SET review_note='note' WHERE id=?", openShift);
+                        jdbc.update("UPDATE " + schema + ".cashier_shifts SET review_note='note' WHERE id=?", submittedShift);
                     }
                 });
             }
