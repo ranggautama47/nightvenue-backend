@@ -291,6 +291,14 @@ CK: `ck_bv_tx_redeem_confirmed` CHECK `(type <> 'REDEEM' OR owner_confirmed IS T
 | forced_review_at | TIMESTAMPTZ | diisi saat cutoff memaksa `MANAGER_REVIEW` |
 | version | BIGINT | NN |
 | created_at, updated_at | TIMESTAMPTZ | NN |
+| submitted_at | TIMESTAMPTZ | Diisi saat kasir submit penutupan shift |
+| expected_cash | BIGINT | Total kas yang diharapkan (opening float + penerimaan kas) |
+| actual_cash | BIGINT | Hitungan fisik kas dari kasir/manager |
+| variance | BIGINT | Selisih kas (`actual_cash - expected_cash`) |
+| submit_note | VARCHAR(255) | Catatan opsional kasir saat submit |
+| reviewed_by | BIGINT | FK→users, manager/admin yang merekonsiliasi (≠ cashier_id) |
+| reviewed_at | TIMESTAMPTZ | Waktu rekonsiliasi |
+| review_note | VARCHAR(255) | Catatan review manager (wajib jika variance ≠ 0 atau forced review) |
 
 **Foundation Phase 6:** status vocabulary mencakup `OPEN`, `SUBMITTED`, `MANAGER_REVIEW`, `RECONCILED`; Phase 6 mengoperasikan pembukaan shift dan stale `OPEN → MANAGER_REVIEW` saja. `opening_float >= 0`. `status = 'MANAGER_REVIEW'` mensyaratkan `forced_review_at IS NOT NULL`. Foreign key `venue_id` dan `cashier_id` memakai `ON DELETE RESTRICT`. Partial UQ: `UNIQUE (cashier_id) WHERE status = 'OPEN'`.
 
@@ -323,7 +331,7 @@ CK: `ck_bv_tx_redeem_confirmed` CHECK `(type <> 'REDEEM' OR owner_confirmed IS T
 
 ### 4.10 Sistem
 
-**audit_logs** (append-only): `id` PK; `venue_id` FK nullable; `actor_user_id` FK nullable; `action` VARCHAR(50) NN (mis. `ORDER_VOID`, `STOCK_ADJUST`, `SHIFT_FORCED_REVIEW`, `PAYMENT_ON_CLOSED_ORDER`, `WEBHOOK_REJECTED`); `entity_type` VARCHAR(50) NN; `entity_id` BIGINT; `details` JSONB; `ip_address` VARCHAR(45); `created_at` NN.
+**audit_logs** (append-only): `id` PK; `venue_id` FK nullable; `actor_user_id` FK nullable; `action` VARCHAR(50) NN (mis. `ORDER_VOID`, `STOCK_ADJUST`, `SHIFT_OPENED`, `SHIFT_FORCED_REVIEW`, `SHIFT_SUBMITTED`, `SHIFT_RECONCILED`, `PAYMENT_ON_CLOSED_ORDER`, `WEBHOOK_REJECTED`); `entity_type` VARCHAR(50) NN; `entity_id` BIGINT; `details` JSONB; `ip_address` VARCHAR(45); `created_at` NN.
 
 **idempotency_keys**: `id` PK; `key` UUID NN; `scope` VARCHAR(40) NN CK `ORDER_ADD_ITEMS, PAYMENT_CREATE, ORDER_VOID, BOTTLE_DEPOSIT, BOTTLE_REDEEM, ORDER_OPEN`; `user_id` FK NN; `request_hash` CHAR(64) NN; `response_status` INT nullable; `response_body` JSONB nullable; `created_at` NN. UQ `(scope, user_id, key)`. **ORDER_OPEN — IMPLEMENTED (Phase 5A):** reserve and response completion occur in the order transaction. Records are retained for at least 24 hours; cleanup is deferred. After a record is actually removed, retries with that key are no longer guaranteed to replay the original request.
 
@@ -369,6 +377,26 @@ ALTER TABLE bottle_vaults ADD CONSTRAINT uq_vault_source_item UNIQUE (source_ord
 -- Satu shift OPEN per cashier (BR-22)
 CREATE UNIQUE INDEX uq_cashier_shifts_one_open_per_cashier ON cashier_shifts (cashier_id) WHERE status = 'OPEN';
 
+-- Rekonsiliasi kasir V11:
+ALTER TABLE cashier_shifts ADD CONSTRAINT ck_cashier_shifts_reconciliation_values
+  CHECK ((expected_cash IS NULL AND actual_cash IS NULL AND variance IS NULL)
+      OR (expected_cash IS NOT NULL AND actual_cash IS NOT NULL AND variance IS NOT NULL AND variance = actual_cash - expected_cash));
+ALTER TABLE cashier_shifts ADD CONSTRAINT ck_cashier_shifts_expected_cash_nonnegative
+  CHECK (expected_cash IS NULL OR expected_cash >= 0);
+ALTER TABLE cashier_shifts ADD CONSTRAINT ck_cashier_shifts_actual_cash_nonnegative
+  CHECK (actual_cash IS NULL OR actual_cash >= 0);
+ALTER TABLE cashier_shifts ADD CONSTRAINT ck_cashier_shifts_reviewed_by_not_owner
+  CHECK (reviewed_by IS NULL OR reviewed_by <> cashier_id);
+ALTER TABLE cashier_shifts ADD CONSTRAINT ck_cashier_shifts_review_fields_only_when_reconciled
+  CHECK (status = 'RECONCILED' OR (reviewed_by IS NULL AND reviewed_at IS NULL AND review_note IS NULL));
+ALTER TABLE cashier_shifts ADD CONSTRAINT ck_cashier_shifts_pre_review_clean
+  CHECK (status NOT IN ('OPEN', 'MANAGER_REVIEW')
+      OR (submitted_at IS NULL AND expected_cash IS NULL AND actual_cash IS NULL AND variance IS NULL
+          AND submit_note IS NULL AND reviewed_by IS NULL AND reviewed_at IS NULL AND review_note IS NULL));
+ALTER TABLE cashier_shifts ADD CONSTRAINT ck_cashier_shifts_reconciled
+  CHECK (status <> 'RECONCILED'
+      OR (reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL AND expected_cash IS NOT NULL AND actual_cash IS NOT NULL AND variance IS NOT NULL));
+
 -- Idempotency-Key
 ALTER TABLE idempotency_keys ADD CONSTRAINT uq_idem UNIQUE (scope, user_id, key);
 ```
@@ -380,9 +408,9 @@ ALTER TABLE idempotency_keys ADD CONSTRAINT uq_idem UNIQUE (scope, user_id, key)
 | orders | `(venue_id, business_date, status)`; `ix_orders_venue_business_date_status` — **IMPLEMENTED (Phase 5A)** | Laporan per malam |
 | order_items | `(order_id)`; `ix_order_items_order_id` — **IMPLEMENTED (Phase 5A)** | Muat item |
 | inventory_transactions | `(inventory_item_id, created_at)`, `(business_date)`, `(reference_type, reference_id)`; `ix_inventory_transactions_ref` | Riwayat; agregasi forecast; pembalikan void |
-| payments | `(order_id)`, `(venue_id, business_date)`, `(shift_id)`, `(provider_order_id)` | Total bayar; agregasi kas shift; lookup webhook |
+| payments | `(order_id)`, `(venue_id, business_date)`, `(shift_id)`, `(provider_order_id)`; `ix_payments_shift_id` — **IMPLEMENTED (Phase 8, V11)** | Total bayar; agregasi kas shift; lookup webhook |
 | bottle_vaults | `(customer_id, status)`, `(expiry_date) WHERE status = 'ACTIVE'` | Daftar botol; job expiry |
-| cashier_shifts | `(venue_id, business_date, status)` | Antrian review manager |
+| cashier_shifts | `(venue_id, business_date, status)`; `ix_cashier_shifts_open_venue_business_date` on `(venue_id, business_date) WHERE status = 'OPEN'` — **IMPLEMENTED (Phase 8, V11)** | Antrian review manager; job cutoff |
 | void_logs | `(order_id)`; `ix_void_logs_order_id` | Telusur void per order |
 | chat_route_logs | `(created_at)`, `(route)` | Analisis biaya |
 | audit_logs | `(entity_type, entity_id)`, `(created_at)` | Penelusuran |
@@ -444,6 +472,7 @@ ALTER TABLE idempotency_keys ADD CONSTRAINT uq_idem UNIQUE (scope, user_id, key)
 | 47 | audit_logs.venue_id | venues.id | N:0..1 | SET NULL | |
 | 48 | audit_logs.actor_user_id | users.id | N:0..1 | SET NULL | |
 | 49 | idempotency_keys.user_id | users.id | N:1 | CASCADE | |
+| 50 | cashier_shifts.reviewed_by | users.id | N:0..1 | RESTRICT | Ditambahkan Fase 8 (V11), CK `ck_cashier_shifts_reviewed_by_not_owner` |
 
 **Deferred** (tidak dimigrasi): `stock_transfers.from_location_id / to_location_id → stock_locations`, `stock_transfers.requested_by / approved_by → users`, `stock_transfer_items.transfer_id → stock_transfers`, `stock_transfer_items.ingredient_id → ingredients`, `loyalty_accounts.customer_id → customers` (1:1), `loyalty_transactions.account_id → loyalty_accounts`, `loyalty_transactions.order_id → orders`, `reservations.venue_id / table_id / customer_id`, `orders.reservation_id → reservations`, `payment_allocations.payment_id → payments`, `payment_allocations.order_item_id → order_items`.
 
