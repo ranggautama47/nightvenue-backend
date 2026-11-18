@@ -84,7 +84,7 @@ class Phase2DatabaseTests {
                 Map.entry("payments.order_id", "r"), Map.entry("payments.venue_id", "r"),
                 Map.entry("payments.shift_id", "r"), Map.entry("payments.created_by", "r"),
                 Map.entry("payment_events.payment_id", "r"),
-                Map.entry("cashier_shifts.venue_id", "r"), Map.entry("cashier_shifts.cashier_id", "r"),
+                Map.entry("cashier_shifts.venue_id", "r"), Map.entry("cashier_shifts.cashier_id", "r"), Map.entry("cashier_shifts.reviewed_by", "r"),
                 Map.entry("bottle_vaults.venue_id", "r"), Map.entry("bottle_vaults.customer_id", "r"),
                 Map.entry("bottle_vaults.product_id", "r"), Map.entry("bottle_vaults.source_order_item_id", "r"),
                 Map.entry("bottle_vault_transactions.vault_id", "r"), Map.entry("bottle_vault_transactions.order_item_id", "r"),
