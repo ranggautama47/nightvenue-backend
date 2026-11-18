@@ -133,6 +133,103 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /shifts/{id}/submit:
+    post:
+      summary: Submit counted cash and transition shift to SUBMITTED
+      description: |
+        Roles: ADMIN, MANAGER, CASHIER. Only the shift owner (cashier_id) can
+        submit their own shift; non-owners receive 403 Forbidden.
+        The shift must currently be in OPEN status. If the shift is stale
+        relative to the venue's current business date, it is transitioned to
+        MANAGER_REVIEW with forced_review_at, logged to audit, and rejected
+        with 409 SHIFT_NOT_OPEN (returned in Problem.detail).
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubmitShiftRequest" }
+      responses:
+        "200":
+          description: Shift submitted successfully
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShiftSubmissionView" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Caller is not the shift owner
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Shift is not OPEN, or was stale and flipped to MANAGER_REVIEW (Problem.detail = SHIFT_NOT_OPEN)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: Total cash overflow on addition (Problem.detail = SHIFT_CASH_TOTAL_OVERFLOW)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /shifts/{id}/review:
+    post:
+      summary: Reconcile and close a cashier shift
+      description: |
+        Roles: ADMIN, MANAGER. Separation of duties is strictly enforced:
+        shift owner cannot review their own shift (returns 403 Forbidden).
+        Shift must be in SUBMITTED or MANAGER_REVIEW status.
+        From SUBMITTED: actualCash must not be provided in the request body.
+        From MANAGER_REVIEW: actualCash is required.
+        Review note is mandatory if variance != 0 or if the shift was forced to review.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewShiftRequest" }
+      responses:
+        "200":
+          description: Shift reconciled and closed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShiftReviewView" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Caller is the shift owner or lacks ADMIN/MANAGER role
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Shift is not reviewable (Problem.detail = SHIFT_NOT_REVIEWABLE)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: |
+            Business rule violation (returned in Problem.detail):
+            - ACTUAL_CASH_NOT_ALLOWED
+            - ACTUAL_CASH_REQUIRED
+            - REVIEW_NOTE_REQUIRED
+            - SHIFT_CASH_TOTAL_OVERFLOW
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /orders/{orderId}/payments:
     post:
       summary: Record a payment against an order (CASH, CARD_EDC, or Xendit QRIS)
@@ -535,7 +632,9 @@ components:
         type: { type: string, format: uri-reference }
         title: { type: string }
         status: { type: integer }
-        detail: { type: string }
+        detail:
+          type: string
+          description: Human-readable explanation or machine-readable business rule code (e.g. SHIFT_NOT_OPEN, SHIFT_NOT_REVIEWABLE, ACTUAL_CASH_NOT_ALLOWED, ACTUAL_CASH_REQUIRED, REVIEW_NOTE_REQUIRED, SHIFT_CASH_TOTAL_OVERFLOW).
         traceId: { type: string }
     OrderItem:
       type: object
@@ -598,6 +697,84 @@ components:
         version: { type: integer, format: int64 }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    SubmitShiftRequest:
+      type: object
+      required: [actualCash]
+      properties:
+        actualCash:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Counted physical cash at shift close
+        note:
+          type: [string, "null"]
+          maxLength: 255
+          description: Cashier closing note (trimmed; blank becomes null)
+    ShiftSubmissionView:
+      type: object
+      required:
+        - id
+        - status
+        - openingFloat
+        - expectedCash
+        - actualCash
+        - variance
+        - submittedAt
+        - submitNote
+      properties:
+        id: { type: integer, format: int64 }
+        status: { type: string, enum: [SUBMITTED] }
+        openingFloat: { type: integer, format: int64, minimum: 0 }
+        expectedCash: { type: integer, format: int64, minimum: 0 }
+        actualCash: { type: integer, format: int64, minimum: 0 }
+        variance: { type: integer, format: int64, description: "actualCash minus expectedCash (can be negative)" }
+        submittedAt: { type: string, format: date-time }
+        submitNote: { type: [string, "null"], maxLength: 255 }
+    ReviewShiftRequest:
+      type: object
+      properties:
+        actualCash:
+          type: [integer, "null"]
+          format: int64
+          minimum: 0
+          description: Forbidden for SUBMITTED shifts; required for MANAGER_REVIEW shifts
+        note:
+          type: [string, "null"]
+          maxLength: 255
+          description: Required when variance != 0 or forcedReviewAt != null
+    ShiftReviewView:
+      type: object
+      required:
+        - id
+        - venueId
+        - cashierId
+        - businessDate
+        - status
+        - openingFloat
+        - expectedCash
+        - actualCash
+        - variance
+        - submitNote
+        - reviewNote
+        - reviewedBy
+        - reviewedAt
+        - forcedReviewAt
+      properties:
+        id: { type: integer, format: int64 }
+        venueId: { type: integer, format: int64 }
+        cashierId: { type: integer, format: int64 }
+        businessDate: { type: string, format: date }
+        status: { type: string, enum: [RECONCILED] }
+        openingFloat: { type: integer, format: int64, minimum: 0 }
+        submittedAt: { type: [string, "null"], format: date-time }
+        expectedCash: { type: integer, format: int64, minimum: 0 }
+        actualCash: { type: integer, format: int64, minimum: 0 }
+        variance: { type: integer, format: int64 }
+        submitNote: { type: [string, "null"], maxLength: 255 }
+        reviewNote: { type: [string, "null"], maxLength: 255 }
+        reviewedBy: { type: integer, format: int64 }
+        reviewedAt: { type: string, format: date-time }
+        forcedReviewAt: { type: [string, "null"], format: date-time }
     PaymentCreateRequest:
       type: object
       required: [method, amount]

@@ -112,7 +112,7 @@ Design documents live in [`docs/`](docs/README.md) and are the single source of 
 - Xendit sandbox/provider validation is still pending (the M3-B smoke test is skipped by design). QRIS Create/response shape, expiry, Create idempotency, provider status mapping, and provider-side event semantics remain unverified; M3-B, M4-A and M4-B are implemented and tested locally against a stub, not the real provider.
 - Reconciliation (M4-B) scheduler defaults to `enabled=false`; not enabled in production configuration.
 - Refund lifecycle deferred; a separate PM-approved implementation milestone is required (not part of M4/M6).
-- Shift submit/review/reconciliation/variance workflow belongs to Phase 8 (not Phase 6).
+- Shift submit, manager review, cash variance reconciliation, and background cutoff scheduler are implemented (Phase 8). The cutoff scheduler defaults to disabled.
 - `provider_transaction_id` mapping to Xendit `payment_id` remains OPEN.
 - BR-05 minimum spend is enforced for CASH, CARD_EDC, and QRIS through `PaymentService.checkMinimumSpend` and is covered by local integration tests. This does not indicate Xendit provider validation; sandbox validation remains pending. The guard rejects an exhausting payment below the order's minimum-spend snapshot before the provider call.
 
@@ -122,6 +122,32 @@ Design documents live in [`docs/`](docs/README.md) and are the single source of 
 - Deposit requires an order linked to a customer through `order.customer_id`. Walk-in orders without a customer cannot deposit a bottle.
 - The bottle expiry job is off by default (`nightvenue.bottle.expiry.enabled=false`) and is independent of payment reconciliation.
 - Bottle retention is 30 days (`nightvenue.bottle.retention-days`); this property is validated at startup.
+
+### Cashier shifts
+
+- **Opening**: A user with role `CASHIER`, `MANAGER`, or `ADMIN` may have at most one `OPEN` shift globally across all venues (`uq_cashier_shifts_one_open_per_cashier`). Shifts are opened via `POST /api/v1/shifts`.
+- **Cash payment gating**: Recording a `CASH` payment requires an active `OPEN` shift owned by the authenticated payment processor matching the venue and business date.
+- **Reconciliation formulas**:
+  - `expected_cash = opening_float + SUM(amount)` where `shift_id = <exact shift ID> AND method = 'CASH' AND status = 'PAID'`.
+  - `variance = actual_cash - expected_cash`.
+- **Submission**: The shift owner submits counted cash via `POST /api/v1/shifts/{id}/submit`. Submitting transitions the shift to `SUBMITTED`, records expected cash and variance, and prevents further cash payments on that shift. Only the shift owner can submit. Submission note is optional.
+- **Manager review & notes**: Shifts are reviewed and closed via `POST /api/v1/shifts/{id}/review`. Allowed roles are `MANAGER` and `ADMIN`. Separation of duties is strictly enforced: a user cannot review their own shift (`reviewed_by != cashier_id`). A review note is required when `variance != 0` OR `forced_review_at` is set; otherwise it is optional.
+- **Finality**: Transition to `RECONCILED` is final and cannot be reviewed again through the shift review workflow.
+- **Stale shift transitions**:
+  - Shifts left open past the venue's business day cutoff are transitioned to `MANAGER_REVIEW` (with `forced_review_at` set) along two request paths:
+    1. `POST /api/v1/shifts` when opening a new shift.
+    2. `POST /api/v1/shifts/{id}/submit` when submitting a stale shift (rejecting with 409 `SHIFT_NOT_OPEN`).
+  - Shifts in `MANAGER_REVIEW` require manager input of `actual_cash` and a review note upon reconciliation.
+- **Cutoff job configuration & concurrency**:
+  - Application default: `nightvenue.shift.cutoff.enabled=false` (disabled by default). Fixed delay defaults to `PT1M` via `nightvenue.shift.cutoff.fixed-delay`.
+  - Deployment configuration: An operator enabling the background cutoff scheduler sets `NIGHTVENUE_SHIFT_CUTOFF_ENABLED=true` in the target deployment environment.
+  - Concurrent execution: The cutoff job supports concurrent execution across application instances. Conditional database updates ensure that each stale shift is transitioned only once, and the forced-review audit is written only by the execution that successfully updates the row. No leader election is required for this transition.
+- **Audit trail**: Shift state transitions write append-only audit entries to `audit_logs`:
+  - `SHIFT_OPENED`: records `business_date`.
+  - `SHIFT_FORCED_REVIEW`: records `business_date` (actor is the shift owner when triggered via request path, or `NULL` when triggered by the system cutoff job).
+  - `SHIFT_SUBMITTED`: records `expectedCash`, `actualCash`, and `variance`.
+  - `SHIFT_RECONCILED`: records `source_status`, `expected_cash`, `actual_cash`, and `variance`.
+  Cash counts and calculated variance are recorded in audit details for financial traceability; submission and review note texts are excluded.
 
 ### Demo accounts
 

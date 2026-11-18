@@ -74,7 +74,7 @@ nightvenue-backend/
 │   ├── pos/           IMPLEMENTED (Phase 5A–5C): order, VOID and SERVE endpoints/services/repositories
 │   ├── payment/       payment, PaymentGateway, webhook
 │   ├── bottle/        vault, redeem, expiry job
-│   ├── shift/         cashier shift (open + stale-shift transition in request path); scheduled cutoff job remains Phase 8
+│   ├── shift/         cashier shift (open, stale-shift transitions in request paths, submit, manager review, reconciliation, and background cutoff scheduler)
 │   ├── forecast/      client ke ml-service
 │   └── chat/          ChatRouter, fallback, LlmProvider, logging metrik
 │   └── (resources)/db/migration/   Flyway V*__*.sql
@@ -135,7 +135,7 @@ DTO in/out (validasi)                                   JdbcTemplate
 | Order | **IMPLEMENTED (Phase 5A):** `POST /api/v1/orders` requires `Idempotency-Key` (UUID); same key and payload replays the original 201 response snapshot, while a changed payload returns 422. `GET /api/v1/orders/{id}`; roles ADMIN, MANAGER, CASHIER; access outside the user's venue returns 404. **IMPLEMENTED (Phase 5B):** `POST /api/v1/orders/{id}/items` (Stock-at-Order deduction, Idempotency-Key, order totals recalculation). **IMPLEMENTED (Phase 5C):** `POST /api/v1/orders/{id}/void` (whole-order VOID), `POST /api/v1/orders/{id}/items/{itemId}/serve` (per-item SERVE). |
 | Payment | `POST /api/v1/orders/{id}/payments` (CASH, CARD_EDC, QRIS implemented; path documented in `openapi.yaml`); `GET /api/v1/payments/{paymentId}` (implemented; roles ADMIN, MANAGER, CASHIER; unknown or cross-venue id → 404; documented in `openapi.yaml`); `POST /api/v1/webhooks/xendit` (token verification + Status API verification implemented; not described in `openapi.yaml`; provider contract and M4 behavior in ADR-022) |
 | Bottle | `POST /api/v1/bottles` (deposit, `Idempotency-Key`, roles ADMIN/MANAGER/CASHIER), `POST /api/v1/bottles/redeem` (roles ADMIN/MANAGER/CASHIER), `GET /api/v1/bottles` (roles ADMIN/MANAGER/CASHIER), `GET /api/v1/customers/me/bottles` (role CUSTOMER only; JWT sub -> customers.user_id, exclude staff) |
-| Shift | `POST /api/v1/shifts` (Phase 6 implemented: open shift, one OPEN per cashier, stale OPEN → `MANAGER_REVIEW` + audit; documented in `openapi.yaml`); `POST /api/v1/shifts/{id}/submit` dan `POST /api/v1/shifts/{id}/review` (Phase 8, not implemented); tidak ada endpoint `GET` daftar shift |
+| Shift | `POST /api/v1/shifts` (Phase 6 implemented: open shift, one OPEN per cashier, stale OPEN → `MANAGER_REVIEW` + audit; documented in `openapi.yaml`); `POST /api/v1/shifts/{id}/submit` dan `POST /api/v1/shifts/{id}/review` (Phase 8 implemented: submit uang kas oleh pemilik shift, review/rekonsiliasi oleh manager/admin; documented in `openapi.yaml`); tidak ada endpoint `GET` daftar shift |
 | Forecast | `POST /api/v1/forecasts`, `GET /api/v1/forecasts` |
 | Chat | `POST /api/v1/chat` (anonim diperbolehkan, rate-limited) |
 | FastAPI (internal) | `POST /ml/chat/classify`, `POST /ml/forecast/inventory`, `GET /health` |
@@ -328,22 +328,32 @@ flowchart TD
     E -- "Tidak" --> F["409 SHIFT_NOT_OPEN"]
     E -- "Ya" --> G["payments.shift_id terisi"]
 
-    C -.-> P["Phase 8 planned: scheduled cutoff<br/>OPEN → MANAGER_REVIEW<br/>Not implemented"]
+    C -.-> P["Scheduled cutoff job<br/>OPEN → MANAGER_REVIEW (actor NULL)<br/>Implemented Phase 8"]
 
-    C -.-> J["Phase 8 planned: submit kas aktual"]
+    C -.-> J["POST /api/v1/shifts/{id}/submit<br/>Submit uang kas aktual oleh pemilik shift"]
 
-    J --> K["Phase 8 planned: SUBMITTED<br/>variance = actual - expected"]
+    J --> K["SUBMITTED<br/>variance = actual_cash - expected_cash"]
 
-    K --> L["Phase 8 planned: manager review + catatan"]
+    K --> L["POST /api/v1/shifts/{id}/review<br/>Manager/Admin review + catatan"]
 
     P -.-> L
 
-    L --> M["Phase 8 planned: RECONCILED"]
+    L --> M["RECONCILED (Final)"]
 ```
 
-`expected_cash = opening_float + SUM(amount) payment CASH PAID dengan shift_id` (BR-23).
+`expected_cash = opening_float + SUM(amount) payment CASH PAID dengan shift_id` (BR-23; `method = 'CASH' AND status = 'PAID'`).
 
-**Status implementasi Phase 6.** `ShiftService.openShift` memeriksa shift OPEN milik kasir. Bila `business_date` shift tersebut sama atau lebih baru daripada current business date venue shift itu, request ditolak 409 `SHIFT_ALREADY_OPEN`. Bila shift tersebut lebih lama, `ShiftRepository.markStaleShiftForReview` melakukan transisi `OPEN` → `MANAGER_REVIEW` dengan `forced_review_at` dan audit, lalu shift baru dibuat secara atomik. Transisi ini berjalan di jalur request, bukan scheduled job. Scheduled cutoff job serta seluruh alur submit/variance/manager review/`RECONCILED` tetap Phase 8 dan belum diimplementasikan; ADR-002 tetap target desainnya.
+**Status implementasi Phase 8.** Fondasi pembukaan shift dan transisi stale shift pada jalur request berasal dari Phase 6: `ShiftService.openShift` memeriksa shift OPEN milik kasir; bila `business_date` shift tersebut sama atau lebih baru dari current business date venue, request ditolak 409 `SHIFT_ALREADY_OPEN`. Bila lebih lama, `ShiftRepository.markStaleShiftForReview` melakukan transisi `OPEN` → `MANAGER_REVIEW` dengan `forced_review_at` dan audit `SHIFT_FORCED_REVIEW`, lalu shift baru dibuat secara atomik.
+
+Pada Phase 8, alur penutupan dan rekonsiliasi shift telah diimplementasikan penuh:
+1. **Transisi stale pada jalur request**: Terjadi pada dua jalur spesifik:
+   - `POST /api/v1/shifts` saat shift owner membuka shift baru ketika masih memiliki shift open dari business date sebelumnya.
+   - `POST /api/v1/shifts/{id}/submit` saat shift owner mencoba submit shift yang sudah lewat business date-nya (ditolak 409 `SHIFT_NOT_OPEN` setelah dialihkan ke `MANAGER_REVIEW`).
+2. **Scheduled cutoff job mandiri**: `ShiftCutoffService.runCutoff()` dan `ShiftCutoffScheduler` berjalan secara independen di latar belakang, memindai seluruh venue dengan shift open, dan mengalihkan shift stale ke `MANAGER_REVIEW` dengan audit `SHIFT_FORCED_REVIEW` (actor `NULL`). Job ini aman dijalankan konkuren antar instansi aplikasi tanpa leader election karena conditional update pada database.
+3. **Submit uang kas**: Pemilik shift memasukkan hitungan fisik uang kas (`POST /api/v1/shifts/{id}/submit`). Sistem menghitung `expected_cash = opening_float + SUM(amount)` di mana `shift_id = shift.id AND method = 'CASH' AND status = 'PAID'`, menghitung `variance = actual_cash - expected_cash`, dan mengubah status ke `SUBMITTED`.
+4. **Manager review & rekonsiliasi**: Manager/admin merekonsiliasi shift (`POST /api/v1/shifts/{id}/review`). Status berubah menjadi `RECONCILED` (final dan tidak dapat direview ulang melalui workflow review shift). Pemilik shift dilarang mereview shift miliknya sendiri (`reviewed_by <> cashier_id`). Catatan review wajib diisi jika `variance <> 0` atau `forced_review_at IS NOT NULL`.
+
+Phase 8 cutoff scheduler defaults to disabled (`nightvenue.shift.cutoff.enabled=false`). Each actual deployment must explicitly set `NIGHTVENUE_SHIFT_CUTOFF_ENABLED=true`; tests should call the cutoff service directly and must not start the scheduler.
 
 Semua role yang menerima CASH memakai shift miliknya sendiri, dan reviewer tidak boleh pemilik shift yang direview (BR-30).
 
