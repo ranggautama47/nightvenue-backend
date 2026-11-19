@@ -23,6 +23,10 @@ spring:
       enabled: true
 
 nightvenue:
+  ml:
+    service-url: ${ML_SERVICE_URL:}
+    internal-token: ${ML_INTERNAL_TOKEN:}
+    forecast-timeout-ms: ${ML_FORECAST_TIMEOUT_MS:10000}
   shift:
     cutoff:
       enabled: ${NIGHTVENUE_SHIFT_CUTOFF_ENABLED:false}
