@@ -8,6 +8,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public class ForecastRepository {
@@ -27,6 +28,22 @@ public class ForecastRepository {
                 )
                 """, Boolean.class, venueId, ingredientId);
         return Boolean.TRUE.equals(exists);
+    }
+
+    public Optional<VenueContext> findVenueContext(long venueId) {
+        List<VenueContext> contexts = jdbc.query("""
+                SELECT timezone, business_day_cutoff_hour
+                FROM venues
+                WHERE id = ?
+                """, (rs, row) -> new VenueContext(
+                rs.getString("timezone"), rs.getInt("business_day_cutoff_hour")), venueId);
+        return contexts.stream().findFirst();
+    }
+
+    public Optional<String> findIngredientUnit(long ingredientId) {
+        List<String> units = jdbc.query("SELECT unit FROM ingredients WHERE id = ?",
+                (rs, row) -> rs.getString("unit"), ingredientId);
+        return units.stream().findFirst();
     }
 
     public List<LedgerDay> findDailyNetConsumption(
@@ -60,6 +77,9 @@ public class ForecastRepository {
     }
 
     public record LedgerDay(LocalDate businessDate, BigDecimal netConsumption) {
+    }
+
+    public record VenueContext(String timezone, int cutoffHour) {
     }
 
     public record NewForecast(
