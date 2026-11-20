@@ -600,6 +600,52 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: Concurrent bottle state conflict }
         "422": { description: Business rule violation }
+  /forecasts:
+   post:
+     summary: Generate an inventory forecast
+     description: |
+       Available to users with the ADMIN or MANAGER role. CASHIER requests return 403.
+       `asOfBusinessDate` is the last completed business day in the input series.
+       `predictedQuantity` is the cumulative total of non-negative daily forecasts
+       over the requested horizon. A 422 response indicates insufficient or invalid
+       history; its `detail` varies and the problem body has no `code` property.
+       A 503 response means the forecast service is unavailable and contains a
+       sanitized problem detail.
+     security:
+       - bearerAuth: []
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema: { $ref: "#/components/schemas/ForecastRequest" }
+     responses:
+       "200":
+         description: Forecast generated and persisted
+         content:
+           application/json:
+             schema: { $ref: "#/components/schemas/ForecastResponse" }
+       "400":
+         description: Invalid request body, missing required field, or horizonDays outside 1..14
+         content:
+           application/problem+json:
+             schema: { $ref: "#/components/schemas/Problem" }
+       "401": { $ref: "#/components/responses/Unauthorized" }
+       "403":
+         description: Caller does not have the ADMIN or MANAGER role
+         content:
+           application/problem+json:
+             schema: { $ref: "#/components/schemas/Problem" }
+       "404": { $ref: "#/components/responses/NotFound" }
+       "422":
+         description: Insufficient local history or invalid history reported by the forecast service; detail text varies and no code property is returned
+         content:
+           application/problem+json:
+             schema: { $ref: "#/components/schemas/Problem" }
+       "503":
+         description: Forecast service unavailable; upstream failure details are sanitized
+         content:
+           application/problem+json:
+             schema: { $ref: "#/components/schemas/Problem" }
 components:
   securitySchemes:
     bearerAuth:
@@ -970,6 +1016,51 @@ components:
         storedAt: { type: string, format: date-time }
         expiryDate: { type: string, format: date }
         status: { type: string, enum: [ACTIVE, EMPTY, EXPIRED, RELEASED] }
+    ForecastRequest:
+     type: object
+     required: [venueId, ingredientId]
+     properties:
+       venueId: { type: integer, format: int64 }
+       ingredientId: { type: integer, format: int64 }
+       horizonDays:
+         type: [integer, "null"]
+         format: int32
+         default: 7
+         minimum: 1
+         maximum: 14
+    ForecastResponse:
+     type: object
+     required: [forecastId, venueId, ingredientId, unit, horizonDays, predictedQuantity, selectedModel, modelName, modelMae, baselineMae, inputDays, asOfBusinessDate, generatedAt]
+     properties:
+       forecastId: { type: integer, format: int64 }
+       venueId: { type: integer, format: int64 }
+       ingredientId: { type: integer, format: int64 }
+       unit: { type: string, enum: [ML, GRAM, PIECE] }
+       horizonDays: { type: integer, format: int32 }
+       predictedQuantity:
+         type: number
+         minimum: 0
+         description: Cumulative total of non-negative daily forecasts over the horizon; JSON number scale is not guaranteed.
+       selectedModel:
+         type: string
+         enum: [REGRESSION, BASELINE]
+         description: Method selected by backtest MAE; ties select REGRESSION.
+       modelName:
+         type: string
+         enum: [ols_weekday_trend, baseline_dow_mean]
+         description: Name of the selected method.
+       modelMae:
+         type: number
+         description: Regression mean absolute error over the last horizonDays observations in the input series.
+       baselineMae:
+         type: number
+         description: Same-weekday baseline mean absolute error over the last horizonDays observations in the input series.
+       inputDays: { type: integer, format: int32, minimum: 28 }
+       asOfBusinessDate:
+         type: string
+         format: date
+         description: Last completed business day in the input series.
+       generatedAt: { type: string, format: date-time }
   responses:
     BadRequest:
       description: Invalid JSON, missing field, or password over 72 UTF-8 bytes

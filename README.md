@@ -21,9 +21,13 @@ Spring Boot (Java), FastAPI (Python), PostgreSQL, Redis, Docker Compose, GitHub 
 | Service | Role | Host access |
 |---|---|---|
 | `api` | Spring Boot. System of record and all business logic | `localhost:8080` |
-| `ml-service` | FastAPI. Chat intent classifier and forecasting (later phases) | **Not published** (internal Docker network only) |
+| `ml-service` | FastAPI. Inventory forecasting; chat intent classifier not implemented | **Not published** (internal Docker network only) |
 | `postgres` | PostgreSQL | `127.0.0.1:5433` (dev only) |
 | `redis` | Cache, rate limit, refresh tokens | `127.0.0.1:6379` (dev only) |
+
+## Inventory forecasting
+
+NightVenue forecasts ingredient demand from the inventory ledger through `POST /api/v1/forecasts`, available to ADMIN and MANAGER. The response shows the selected method and both regression and baseline backtest MAEs; each successful request adds a row to `stock_forecasts`. The ML service stays on the internal Docker network. Series gaps become zero and negative daily net values are clamped; later voids remain dated on the void day, and the evaluation uses synthetic data rather than production accuracy. The intent classifier (FR-ML-01/02) is not yet implemented.
 
 ## Quick start (Docker)
 

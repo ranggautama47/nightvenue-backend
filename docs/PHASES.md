@@ -195,6 +195,46 @@ Regression evidence measured at baseline `ec3cd9e` on 2026-11-13 (owner-verified
 - [ ] Timeout 10 dtk; kegagalan ML → 503 untuk fitur ini saja
 - [ ] Token internal; port ML tidak dipublikasikan
 
+Status Phase 9: IN PROGRESS — implementation committed through 9c-3c; documentation (9d), full regression, and CI verification pending.
+
+**Bukti implementasi dan tes terarah** (hash commit diverifikasi Owner):
+- 9a — `270461d`; pytest: 22.
+- 9b — `88d7f55`; pytest: 27.
+- 9c-1 — `0225286`.
+- 9c-2 — `d5735c9`.
+- 9c-3a — `f5c615e`; `ForecastRepositoryIntegrationTests`: 6.
+- 9c-3b — `72a4fe1`; `ForecastSeriesBuilderTests`: 15.
+- 9c-3c Round A — `6bbae68`; `ForecastIntegrationTests`: 13; run terarah gabungan: 34 tes, BUILD SUCCESS.
+- 9c-3c Round B — `caac2e4`; 11 tes dalam 6 kelas, BUILD SUCCESS.
+
+Full regression, rerun ruff/pytest, dan GitHub Actions belum dijalankan.
+
+**Evidence C** (`ml-service/reports/evidence_c_forecast_evaluation.md`): evaluasi offline pada data sintetis; seed `20260101`, 126 hari mulai `2026-01-01`. Horizon 7 hari; training hari 1–84, validation 85–105, held-out 106–126; origin validation 84, 91, 98 dan held-out 105, 112, 119. Angka MAE di bawah adalah mean daily MAE Regression / Baseline / Selected:
+
+| Split sintetis | A (ML) | B (GRAM) | C (PIECE) |
+|---|---:|---:|---:|
+| Validation | 30.773 / 91.715 / 30.773 | 31.318 / 27.991 / 30.287 | 4.104 / 5.832 / 4.104 |
+| Held-out | 34.551 / 121.205 / 34.551 | 37.706 / 37.335 / 38.413 | 2.647 / 6.640 / 2.647 |
+
+| Ingredient | Unit | Planted slope | Recovered OLS slope |
+|---|---|---:|---:|
+| A | ML | 2.000 | 2.003 |
+| B | GRAM | 0.000 | -0.240 |
+| C | PIECE | 0.100 | 0.078 |
+
+Data Evidence C sintetis; angka tersebut bukan akurasi produksi. Pada B (GRAM) held-out, Selected MAE 38.413 lebih tinggi daripada Regression 37.706 dan Baseline 37.335.
+
+Evidence C held-out MAE berasal dari evaluasi offline pada tiga window sintetis yang ditahan untuk pengujian; angka itu berbeda dari field API. Dalam `ml-service/app/forecast.py`, fungsi `calculate_forecast` menghitung `modelMae` dan `baselineMae` sebagai mean absolute error terhadap `horizonDays` observasi terakhir pada seri input, menggunakan observasi input sebelumnya untuk melatih masing-masing metode.
+
+**Batasan forecasting**
+1. Spring mengambil ledger dari `asOfBusinessDate - 89 hari` sampai asOf inklusif. Builder mengisi nol hanya dari baris pertama di jendela sampai asOf; jendela maksimal 90 hari dan observasi minimum `max(28, 21 + horizonDays)`. Gap di dalam rentang menjadi 0; builder tidak mengisi sebelum baris pertama atau sesudah asOf. Alur ini mengasumsikan ledger mencatat semua pergerakan relevan; tidak ada tabel kalender buka/tutup venue.
+2. Builder mengubah net harian negatif menjadi 0. Ledger tetap utuh. `VOID_RETURN` dicatat pada business date void, bukan tanggal `SALE_DEDUCT` awal; void belakangan tidak membalik tanggal penjualan pada seri. Ini penyederhanaan input, bukan rekonsiliasi akuntansi. Perbaikan kelak dapat mengaitkan void lewat `void_logs.order_item_id`.
+3. `predictedQuantity` adalah jumlah kumulatif prediksi harian non-negatif selama horizon.
+4. `modelName` adalah nama metode pemenang (`ols_weekday_trend` atau `baseline_dow_mean`); `selectedModel` adalah `REGRESSION` atau `BASELINE`. MAE dihitung pada observasi input terakhir sebanyak horizon hari; nilai lebih rendah memilih metode dan jika MAE sama (tie), REGRESSION dipilih. Evidence C menunjukkan hasil pilihan dapat lebih buruk dari kedua metode pada held-out B (GRAM): 38.413 dibanding Regression 37.706 dan Baseline 37.335.
+5. Error memakai ProblemDetail tanpa properti `code`. Pre-check lokal menghasilkan 422 dengan detail `INSUFFICIENT_DATA: available=X required=Y`; upstream 422 dengan `INSUFFICIENT_DATA` atau `INVALID_SERIES` menghasilkan detail yang sama dengan kode upstream. Kegagalan upstream/transport lain, termasuk timeout, connection error, 5xx, 401/404, malformed atau incomplete 200, dan 422 tanpa kode, menghasilkan 503 dengan detail `Forecast service unavailable`. Body upstream dan nilai internal token tidak dikembalikan.
+6. Skala JSON number tidak dijamin (`12.5` dapat muncul sebagai `12.500`); database menyimpan `predicted_quantity` sebagai `NUMERIC(14,3)`.
+7. Route hanya `POST /api/v1/forecasts`. Tidak ada UNIQUE atau idempotensi untuk forecast; dua request sukses membuat dua baris.
+
 ### Fase 10 — Hybrid chat (Tier 2)
 **FR**: CHAT-01..12.
 **DoD**

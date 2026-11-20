@@ -306,7 +306,28 @@ CK: `ck_bv_tx_redeem_confirmed` CHECK `(type <> 'REDEEM' OR owner_confirmed IS T
 
 ### 4.9 ML dan Chat
 
-**stock_forecasts**: `id` PK; `venue_id` FK NN; `ingredient_id` FK NN; `generated_at` NN; `as_of_business_date` DATE NN; `horizon_days` INT NN; `predicted_quantity` NUMERIC(14,3) NN; `model_name` VARCHAR(40) NN; `model_mae` NUMERIC(14,3); `baseline_mae` NUMERIC(14,3); `input_days` INT NN; `requested_by` FK→users NN.
+**stock_forecasts** (V12):
+
+| Kolom | Tipe | Nullability dan arti |
+|---|---|---|
+| `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | Primary key |
+| `venue_id` | `BIGINT` | NOT NULL; FK ke `venues(id)`, `ON DELETE RESTRICT` |
+| `ingredient_id` | `BIGINT` | NOT NULL; FK ke `ingredients(id)`, `ON DELETE RESTRICT` |
+| `generated_at` | `TIMESTAMPTZ` | NOT NULL; waktu forecast dihasilkan |
+| `as_of_business_date` | `DATE` | NOT NULL; business date terakhir dalam seri input |
+| `horizon_days` | `INTEGER` | NOT NULL |
+| `predicted_quantity` | `NUMERIC(14,3)` | NOT NULL; total kumulatif forecast harian non-negatif selama horizon |
+| `model_name` | `VARCHAR(40)` | NOT NULL; nama metode pemenang (`ols_weekday_trend` atau `baseline_dow_mean`) |
+| `model_mae` | `NUMERIC(14,3)` | Nullable; MAE regresi |
+| `baseline_mae` | `NUMERIC(14,3)` | Nullable; MAE baseline |
+| `input_days` | `INTEGER` | NOT NULL; jumlah hari observasi yang dipakai |
+| `requested_by` | `BIGINT` | NOT NULL; FK ke `users(id)`, `ON DELETE RESTRICT` |
+
+CHECK V12: `ck_stock_forecasts_horizon_positive` (`horizon_days > 0`); `ck_stock_forecasts_predicted_nonneg` (`predicted_quantity >= 0`); `ck_stock_forecasts_input_days_min` (`input_days >= 28`).
+
+Index V12: `ix_stock_forecasts_venue_ingredient` pada `(venue_id, ingredient_id)`; `ix_stock_forecasts_as_of_date` pada `(as_of_business_date)`.
+
+Tidak ada constraint UNIQUE tambahan selain PK `id`. Setiap request sukses membuat satu baris baru; tidak ada deduplikasi atau idempotensi.
 
 **venue_faqs** (basis pengetahuan lokal chat): `id` PK; `venue_id` FK NN; `intent` VARCHAR(40) NN (salah satu dari 11 intent, ADR-011); `answer_template` TEXT NN; `is_active` BOOLEAN NN; UQ `(venue_id, intent)`.
 
@@ -411,6 +432,7 @@ ALTER TABLE idempotency_keys ADD CONSTRAINT uq_idem UNIQUE (scope, user_id, key)
 | payments | `(order_id)`, `(venue_id, business_date)`, `(shift_id)`, `(provider_order_id)`; `ix_payments_shift_id` — **IMPLEMENTED (Phase 8, V11)** | Total bayar; agregasi kas shift; lookup webhook |
 | bottle_vaults | `(customer_id, status)`, `(expiry_date) WHERE status = 'ACTIVE'` | Daftar botol; job expiry |
 | cashier_shifts | `(venue_id, business_date, status)`; `ix_cashier_shifts_open_venue_business_date` on `(venue_id, business_date) WHERE status = 'OPEN'` — **IMPLEMENTED (Phase 8, V11)** | Antrian review manager; job cutoff |
+| stock_forecasts | `ix_stock_forecasts_venue_ingredient` on `(venue_id, ingredient_id)`; `ix_stock_forecasts_as_of_date` on `(as_of_business_date)` — **IMPLEMENTED (Phase 9, V12)** | Lookup forecast per venue/bahan dan tanggal |
 | void_logs | `(order_id)`; `ix_void_logs_order_id` | Telusur void per order |
 | chat_route_logs | `(created_at)`, `(route)` | Analisis biaya |
 | audit_logs | `(entity_type, entity_id)`, `(created_at)` | Penelusuran |
