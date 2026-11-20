@@ -189,13 +189,13 @@ Regression evidence measured at baseline `ec3cd9e` on 2026-11-13 (owner-verified
 ### Fase 9 — ML forecasting (Tier 2)
 **FR**: ML-01..06.
 **DoD**
-- [ ] Minimal 28 hari data; kurang → 422
-- [ ] Model dibandingkan baseline (MAE); keduanya ditampilkan
-- [ ] **Bukti C**: laporan evaluasi dengan data sintetis berlabel
-- [ ] Timeout 10 dtk; kegagalan ML → 503 untuk fitur ini saja
-- [ ] Token internal; port ML tidak dipublikasikan
+- [x] Minimal 28 hari data; kurang → 422
+- [x] Model dibandingkan baseline (MAE); keduanya ditampilkan
+- [x] **Bukti C**: laporan evaluasi dengan data sintetis berlabel
+- [ ] Timeout 10 dtk; kegagalan ML → 503 untuk fitur ini saja — NOT VERIFIED: `MlClient` configures 10,000 ms connect/read timeouts, but its read timeout only bounds waiting for response headers, not the full response body. Forecast failure tests assert 503 and no forecast persistence, but do not call an unrelated feature after an ML failure.
+- [x] Token internal; port ML tidak dipublikasikan
 
-Status Phase 9: IN PROGRESS — implementation committed through 9c-3c; documentation (9d), full regression, and CI verification pending.
+Status Phase 9: IN PROGRESS — implementation committed through 9e; documentation (9d) and local regression verification complete; remote push, GitHub Actions verification, and final PM acceptance pending.
 
 **Bukti implementasi dan tes terarah** (hash commit diverifikasi Owner):
 - 9a — `270461d`; pytest: 22.
@@ -207,7 +207,7 @@ Status Phase 9: IN PROGRESS — implementation committed through 9c-3c; document
 - 9c-3c Round A — `6bbae68`; `ForecastIntegrationTests`: 13; run terarah gabungan: 34 tes, BUILD SUCCESS.
 - 9c-3c Round B — `caac2e4`; 11 tes dalam 6 kelas, BUILD SUCCESS.
 
-Full regression, rerun ruff/pytest, dan GitHub Actions belum dijalankan.
+Verifikasi lokal (Owner): Maven 784 tes, 0 gagal, 0 error, 1 skip (`XenditSmokeTest`, opt-in dengan `-Dxendit.smoke=true` dan `XENDIT_SECRET_KEY` non-blank); Ruff lulus; pytest 27 passed. Tidak ada perubahan pada `ml-service` setelah `0d5a573`. Branch belum di-push; GitHub Actions belum diverifikasi.
 
 **Evidence C** (`ml-service/reports/evidence_c_forecast_evaluation.md`): evaluasi offline pada data sintetis; seed `20260101`, 126 hari mulai `2026-01-01`. Horizon 7 hari; training hari 1–84, validation 85–105, held-out 106–126; origin validation 84, 91, 98 dan held-out 105, 112, 119. Angka MAE di bawah adalah mean daily MAE Regression / Baseline / Selected:
 
