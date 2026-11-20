@@ -25,7 +25,8 @@ final class MlStub implements AutoCloseable {
         MALFORMED_200,
         MISSING_FIELD_200,
         ECHO_INGREDIENT_ID,
-        HANG
+        HANG,
+        DELAYED_BODY
     }
 
     private static final String SUCCESS_BODY = """
@@ -38,6 +39,8 @@ final class MlStub implements AutoCloseable {
     private final HttpServer server;
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final CountDownLatch hangRelease = new CountDownLatch(1);
+    private final CountDownLatch bodyStarted = new CountDownLatch(1);
+    private final CountDownLatch bodyRelease = new CountDownLatch(1);
     private final AtomicInteger requestCount = new AtomicInteger();
     private final Mode mode;
     volatile String method;
@@ -65,6 +68,7 @@ final class MlStub implements AutoCloseable {
                     }
                     respond(exchange, 200, SUCCESS_BODY, "application/json");
                 }
+                case DELAYED_BODY -> respondWithHeldBody(exchange);
                 case SERVER_500 -> respond(exchange, 500, "{\"detail\":\"internal\"}", "application/json");
                 case UNAUTHORIZED -> respond(exchange, 401, "{\"detail\":\"unauthorized\"}", "application/json");
                 case VALIDATION_422_INSUFFICIENT -> respond(
@@ -99,11 +103,36 @@ final class MlStub implements AutoCloseable {
         return requestCount.get();
     }
 
+    boolean awaitBodyStarted(long timeout, TimeUnit unit) throws InterruptedException {
+        return bodyStarted.await(timeout, unit);
+    }
+
+    boolean bodyIsHeld() {
+        return bodyRelease.getCount() > 0;
+    }
+
     @Override
     public void close() {
         hangRelease.countDown();
+        bodyRelease.countDown();
         server.stop(0);
         executor.shutdownNow();
+    }
+
+    private void respondWithHeldBody(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, 0);
+        try {
+            OutputStream output = exchange.getResponseBody();
+            output.write("{\"ingredientId\":7,".getBytes(StandardCharsets.UTF_8));
+            output.flush();
+            bodyStarted.countDown();
+            bodyRelease.await(10, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        } finally {
+            exchange.close();
+        }
     }
 
     private static void respond(
