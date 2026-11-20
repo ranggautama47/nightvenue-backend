@@ -39,7 +39,7 @@ class ShiftReconciliationMigrationTests {
             Flyway flyway = flyway(schema).load();
             flyway.migrate();
 
-            assertEquals("11", flyway.info().current().getVersion().getVersion());
+            assertEquals("12", flyway.info().current().getVersion().getVersion());
             assertEquals(8, jdbc.queryForObject("""
                     SELECT COUNT(*) FROM information_schema.columns
                     WHERE table_schema = ? AND table_name = 'cashier_shifts'

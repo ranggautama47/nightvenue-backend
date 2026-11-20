@@ -40,7 +40,7 @@ class PaymentSchemaMigrationTests {
         try {
             Flyway flyway = flyway(schema, postgres.getJdbcUrl()).load();
             flyway.migrate();
-            assertEquals("11", flyway.info().current().getVersion().getVersion());
+            assertEquals("12", flyway.info().current().getVersion().getVersion());
             assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?", Integer.class, schema, "payments"));
             assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?", Integer.class, schema, "payment_events"));
             assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?", Integer.class, schema, "cashier_shifts"));
@@ -58,7 +58,7 @@ class PaymentSchemaMigrationTests {
             assertEquals("7", v7.info().current().getVersion().getVersion());
             Flyway latest = flyway(schema, postgres.getJdbcUrl()).load();
             latest.migrate();
-            assertEquals("11", latest.info().current().getVersion().getVersion());
+            assertEquals("12", latest.info().current().getVersion().getVersion());
         } finally {
             dropSchema(schema);
         }
@@ -116,7 +116,7 @@ class PaymentSchemaMigrationTests {
             // 3. Migrate from V8 to V9
             Flyway v9 = flyway(schema, postgres.getJdbcUrl()).load();
             v9.migrate();
-            assertEquals("11", v9.info().current().getVersion().getVersion());
+            assertEquals("12", v9.info().current().getVersion().getVersion());
 
             // 4. Assert legacy rows are intact and readable with original columns
             Integer legacyCount = schemaJdbc.queryForObject(

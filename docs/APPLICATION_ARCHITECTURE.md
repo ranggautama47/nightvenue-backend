@@ -16,7 +16,7 @@ flowchart TB
 
     subgraph BE["nightvenue-backend (Docker Compose)"]
         API["Spring Boot API<br/>system of record"]
-        ML["FastAPI ML service<br/>classifier dan forecasting"]
+        ML["FastAPI ML service<br/>forecasting; intent classifier rencana Phase 10, belum diimplementasikan"]
         PG[("PostgreSQL")]
         RD[("Redis")]
     end
@@ -35,13 +35,13 @@ flowchart TB
 
 | Komponen | Boleh | Tidak boleh |
 |---|---|---|
-| Spring Boot | Semua logika bisnis, auth, uang, stok, status, BusinessDateService, routing chat | — |
-| FastAPI | Klasifikasi intent; prediksi stok dari deret numerik | Akses DB, auth, checkout, payment, mutasi inventory/bottle, aturan transaksional |
+| Spring Boot | Semua logika bisnis, auth, uang, stok, status, BusinessDateService; routing chat rencana Phase 10, belum diimplementasikan | — |
+| FastAPI | Perhitungan forecast dari deret numerik; klasifikasi intent FR-ML-01/02 rencana Phase 10, belum diimplementasikan | Akses DB, auth, checkout, payment, mutasi inventory/bottle, aturan transaksional |
 | PostgreSQL | Sumber kebenaran | — |
 | Redis | Cache menu, rate limit, refresh token | State bisnis utama |
 | Frontend | Presentasi, validasi UX | Menjadi batas keamanan |
 
-**Kegagalan FastAPI tidak menghentikan transaksi inti**: order, payment, void, bottle, dan shift tidak memanggil FastAPI. Hanya chat dan forecasting yang bergantung padanya, dan chat memiliki fallback (bagian 7.6).
+**Kegagalan FastAPI pada forecasting tidak menghentikan transaksi inti**: order, payment, void, bottle, dan shift tidak memakai `MlClient`; kegagalan forecast memberi 503 pada endpoint forecast saja.
 
 ---
 
@@ -136,9 +136,9 @@ DTO in/out (validasi)                                   JdbcTemplate
 | Payment | `POST /api/v1/orders/{id}/payments` (CASH, CARD_EDC, QRIS implemented; path documented in `openapi.yaml`); `GET /api/v1/payments/{paymentId}` (implemented; roles ADMIN, MANAGER, CASHIER; unknown or cross-venue id → 404; documented in `openapi.yaml`); `POST /api/v1/webhooks/xendit` (token verification + Status API verification implemented; not described in `openapi.yaml`; provider contract and M4 behavior in ADR-022) |
 | Bottle | `POST /api/v1/bottles` (deposit, `Idempotency-Key`, roles ADMIN/MANAGER/CASHIER), `POST /api/v1/bottles/redeem` (roles ADMIN/MANAGER/CASHIER), `GET /api/v1/bottles` (roles ADMIN/MANAGER/CASHIER), `GET /api/v1/customers/me/bottles` (role CUSTOMER only; JWT sub -> customers.user_id, exclude staff) |
 | Shift | `POST /api/v1/shifts` (Phase 6 implemented: open shift, one OPEN per cashier, stale OPEN → `MANAGER_REVIEW` + audit; documented in `openapi.yaml`); `POST /api/v1/shifts/{id}/submit` dan `POST /api/v1/shifts/{id}/review` (Phase 8 implemented: submit uang kas oleh pemilik shift, review/rekonsiliasi oleh manager/admin; documented in `openapi.yaml`); tidak ada endpoint `GET` daftar shift |
-| Forecast | `POST /api/v1/forecasts`, `GET /api/v1/forecasts` |
-| Chat | `POST /api/v1/chat` (anonim diperbolehkan, rate-limited) |
-| FastAPI (internal) | `POST /ml/chat/classify`, `POST /ml/forecast/inventory`, `GET /health` |
+| Forecast | `POST /api/v1/forecasts` (ADMIN/MANAGER; tidak ada GET) |
+| Chat | `POST /api/v1/chat` (anonim, rate-limited; rencana Phase 10, belum diimplementasikan) |
+| FastAPI (internal) | `POST /ml/forecast/inventory`, `GET /health`; `POST /ml/chat/classify` rencana Phase 10, belum diimplementasikan |
 
 ---
 
@@ -359,6 +359,8 @@ Semua role yang menerima CASH memakai shift miliknya sendiri, dan reviewer tidak
 
 ### 7.7 Hybrid chat
 
+Rencana Phase 10, belum diimplementasikan. Diagram dan kontrak berikut menjelaskan rancangan classifier serta jalur chat.
+
 ```mermaid
 flowchart TD
     R["POST /api/v1/chat"] --> RL{"Rate limit OK?"}
@@ -383,9 +385,9 @@ flowchart TD
     SAFE --> RESP
 ```
 
-Setiap request menulis `chat_route_logs` (rute, intent, confidence, latensi, token, estimasi biaya) tanpa isi pesan dan tanpa key.
+Rencana Phase 10, belum diimplementasikan: setiap request akan menulis `chat_route_logs` (rute, intent, confidence, latensi, token, estimasi biaya) tanpa isi pesan dan tanpa key.
 
-**Pemetaan intent → sumber jawaban lokal**
+**Rencana Phase 10, belum diimplementasikan: pemetaan intent → sumber jawaban lokal**
 
 | Intent | Sumber | Catatan |
 |---|---|---|
@@ -401,9 +403,9 @@ Setiap request menulis `chat_route_logs` (rute, intent, confidence, latensi, tok
 | ADVANCED_CONVERSATION | Eskalasi LLM | |
 | OUT_OF_SCOPE | Penolakan template | |
 
-**Fallback Spring (maksimal lima)**: jam buka, alamat venue, minimum spend, area venue, kebijakan bottle keeping; regex/keyword.
+**Rencana Phase 10, belum diimplementasikan: fallback Spring deterministik (maksimal lima kategori, ADR-012)**: jam buka, alamat venue, minimum spend, area venue, kebijakan bottle keeping; regex/keyword.
 
-**Kontrak ML**
+**Kontrak ML rancangan Phase 10, belum diimplementasikan** (intent classifier FR-ML-01/02):
 
 ```json
 // POST /ml/chat/classify
@@ -411,28 +413,37 @@ Setiap request menulis `chat_route_logs` (rute, intent, confidence, latensi, tok
 // response
 { "intent": "OPENING_HOURS", "confidence": 0.91, "requiresLlm": false, "modelVersion": "..." }
 
-// POST /ml/forecast/inventory
-{ "ingredientId": 12, "unit": "ML",
-  "series": [ { "businessDate": "2026-08-01", "quantity": 1840.0 } ] }
-// response
-{ "ingredientId": 12, "unit": "ML", "horizonDays": 30, "predictedQuantity": 4200.0,
-  "model": "weekday_linear", "modelMae": 0.0, "baselineMae": 0.0, "inputDays": 90 }
+// Internal POST /ml/forecast/inventory
+// Request and response follow MlForecastRequest and MlForecastResponse.
+// The response includes selectedModel, modelName, modelMae, baselineMae,
+// predictedQuantity, inputDays, and asOfBusinessDate.
 ```
 Angka pada contoh adalah tempat pengisi format, bukan hasil. `series` berasal dari ledger per `business_date`: `net_consumption = -(SUM(delta WHERE type IN ('SALE_DEDUCT','VOID_RETURN')))`. Contoh: SALE_DEDUCT −10 dan VOID_RETURN +4 menghasilkan konsumsi bersih 6 (bukan 14).
 
 ### 7.8 Forecasting
 
 ```text
-Admin/Manager klik "Prediksi Stok"
- → Spring agregasi konsumsi per business_date (>= 28 hari) dari inventory_transactions
- → POST /ml/forecast/inventory (timeout 10 dtk, X-Internal-Token)
-     ml-service: validasi, backtest hari terakhir:
-        baseline = rata-rata hari-yang-sama / moving average
-        model    = regresi dengan fitur hari-dalam-minggu + tren
-     pilih MAE terendah; kembalikan prediksi + kedua MAE
- → Spring simpan stock_forecasts
- → ML gagal/timeout: 503 untuk fitur ini saja, transaksi tidak terpengaruh
+ADMIN/MANAGER → POST /api/v1/forecasts
+ → Spring memeriksa role dan akses venue; venue di luar akses menghasilkan 404
+ → Spring mengagregasi ledger dan membangun seri harian sampai asOfBusinessDate
+ → Spring memanggil FastAPI untuk menghitung regresi dan baseline; timeout default 10.000 ms
+ → Spring menyimpan hasil sukses ke stock_forecasts
+ → kegagalan forecast ML menghasilkan 503 pada endpoint forecast
 ```
+
+FastAPI tidak mengakses database; komunikasi hanya melalui jaringan Docker Compose menggunakan token internal (`X-Internal-Token`).
+
+`ForecastService.forecast` tidak memakai `@Transactional`, sehingga transaksi DB tidak membungkus pemanggilan ML. Pencarian kode Java utama menemukan `MlClient` hanya di paket `forecast`, dipakai oleh `ForecastService`; ini fakta struktur kode, bukan klaim hasil tes.
+
+**Seri input:** Spring mengambil ledger dari `asOfBusinessDate - 89 hari` sampai `asOfBusinessDate`, inklusif. Builder memulai pada tanggal baris ledger pertama di jendela tersebut dan mengisi tanggal harian sampai asOf inklusif. Jendela paling panjang 90 hari; jumlah observasi minimum `max(28, 21 + horizonDays)`. Gap di dalam rentang menjadi 0. Builder tidak mengisi tanggal sebelum baris pertama atau sesudah asOf. Alur ini mengasumsikan ledger mencatat seluruh pergerakan yang relevan; skema tidak memiliki tabel kalender buka/tutup venue.
+
+Net harian negatif diubah menjadi 0 oleh builder; ledger tidak berubah. `VOID_RETURN` memakai business date saat void, bukan tanggal `SALE_DEDUCT` awal. Karena itu void yang terjadi belakangan tidak mengurangi konsumsi pada tanggal penjualan di seri forecast. Ini penyederhanaan input, bukan rekonsiliasi akuntansi. Perbaikan kelak dapat mengaitkan void ke penjualan melalui `void_logs.order_item_id`.
+
+`predictedQuantity` adalah jumlah kumulatif prediksi harian non-negatif selama horizon. `modelMae` adalah mean absolute error regresi pada `horizonDays` observasi terakhir dari input, dengan model dilatih pada observasi sebelumnya; `baselineMae` memakai cara ukur yang sama untuk baseline rata-rata hari yang sama. `modelName` menyebut nama metode pemenang (`ols_weekday_trend` atau `baseline_dow_mean`), sedangkan `selectedModel` bernilai `REGRESSION` atau `BASELINE`. MAE lebih rendah memilih metode; jika MAE sama (tie), REGRESSION dipilih. Evaluasi Evidence C menunjukkan pemilihan dapat kalah dari kedua MAE metode pada held-out: bahan B (GRAM), selected 38.413, regresi 37.706, baseline 37.335. Angka Evidence C berasal dari data sintetis, bukan akurasi produksi.
+
+**Error API:** respons memakai ProblemDetail tanpa properti `code`. Pre-check lokal yang kekurangan data memberi 422 dengan detail `INSUFFICIENT_DATA: available=X required=Y`. Upstream 422 dengan `INSUFFICIENT_DATA` atau `INVALID_SERIES` memberi 422 dengan detail sama dengan kode upstream. Kegagalan upstream/transport lain, termasuk timeout, connection error, 5xx, 401/404, respons 200 malformed atau tidak lengkap, dan 422 tanpa kode, memberi 503 dengan detail `Forecast service unavailable`. Body upstream dan nilai internal token tidak dikembalikan.
+
+Nilai JSON bertipe number tidak menjamin skala desimal yang sama, misalnya `12.5` atau `12.500`; database menyimpan `predicted_quantity` sebagai `NUMERIC(14,3)`. Route hanya POST. Tidak ada UNIQUE atau idempotensi untuk forecast; dua request sukses membuat dua baris `stock_forecasts`. Tabel menyimpan `model_name` dan kedua MAE; respons API juga membawa `selectedModel`.
 
 ---
 

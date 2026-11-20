@@ -6,6 +6,7 @@ import com.nightvenue.api.auth.AuthExceptions.InvalidRefreshToken;
 import com.nightvenue.api.auth.AuthExceptions.RateLimitExceeded;
 import com.nightvenue.api.auth.AuthExceptions.RedisUnavailable;
 import com.nightvenue.api.auth.AuthExceptions.VenueNotFound;
+import com.nightvenue.api.forecast.MlServiceUnavailable;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -74,6 +75,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ProviderNotConfigured.class)
     ProblemDetail providerNotConfigured() {
         return problem(HttpStatus.SERVICE_UNAVAILABLE, "PROVIDER_NOT_CONFIGURED");
+    }
+
+    @ExceptionHandler(MlServiceUnavailable.class)
+    ProblemDetail mlServiceUnavailable() {
+        return problem(HttpStatus.SERVICE_UNAVAILABLE, "Forecast service unavailable");
     }
 
     @ExceptionHandler(PaymentInProgress.class)
