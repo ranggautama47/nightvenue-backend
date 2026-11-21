@@ -100,8 +100,53 @@ public class DemoDataSeeder implements ApplicationRunner {
             }
         }
         seedLedger(inventory);
+        seedChatKnowledge(venueIds);
         log.info("Synthetic Phase 2 seed complete: {} venues, {} demo users, {} inventory items",
                 VENUES.size(), USERS.size(), inventory.size());
+    }
+
+    private void seedChatKnowledge(Map<String, Long> venueIds) {
+        for (VenueSeed venue : VENUES) {
+            long venueId = venueIds.get(venue.code());
+            seedVenueFaqs(venueId, venue);
+            seedVenuePromotions(venueId, venue);
+        }
+    }
+
+    private void seedVenueFaqs(long venueId, VenueSeed venue) {
+        insertFaqIfAbsent(venueId, "BOTTLE_KEEPING",
+                "Bottle keeping is available for eligible bottled products. Ask staff for assistance with storing and redeeming a kept bottle.");
+        insertFaqIfAbsent(venueId, "RESERVATION",
+                "Reservations are not available through this system. Please visit the venue directly for seating assistance.");
+        insertFaqIfAbsent(venueId, "GENERAL_VENUE_INFORMATION",
+                venue.name() + " is located at " + venue.address() + ". Please check the venue opening hours for visit planning.");
+    }
+
+    private void insertFaqIfAbsent(long venueId, String intent, String answerTemplate) {
+        jdbc.update("""
+                INSERT INTO venue_faqs (venue_id, intent, answer_template, is_active)
+                VALUES (?, ?, ?, true)
+                ON CONFLICT (venue_id, intent) DO NOTHING
+                """, venueId, intent, answerTemplate);
+    }
+
+    private void seedVenuePromotions(long venueId, VenueSeed venue) {
+        VenueConfig config = jdbc.queryForObject(
+                "SELECT timezone, business_day_cutoff_hour FROM venues WHERE id = ?",
+                (rs, row) -> new VenueConfig(ZoneId.of(rs.getString("timezone")), rs.getInt("business_day_cutoff_hour")),
+                venueId);
+        LocalDate startsOn = businessDates.currentBusinessDate(config.zone(), config.cutoff());
+        LocalDate endsOn = startsOn.plusDays(365);
+        String title = "Welcome Visit Offer - " + venue.code();
+        jdbc.update("""
+                INSERT INTO promotions (venue_id, title, description, starts_on, ends_on, is_active)
+                SELECT ?, ?, ?, ?, ?, true
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM promotions WHERE venue_id = ? AND title = ?
+                )
+                """, venueId, title,
+                "A demo promotion available for guests at " + venue.name() + ".",
+                startsOn, endsOn, venueId, title);
     }
 
     private Map<String, Long> seedVenues(Instant now) {

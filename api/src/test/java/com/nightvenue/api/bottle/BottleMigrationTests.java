@@ -217,7 +217,7 @@ class BottleMigrationTests {
             // 1. Empty to V10
             Flyway f = flyway(schema, postgres.getJdbcUrl()).load();
             f.migrate();
-            assertEquals("12", f.info().current().getVersion().getVersion());
+            assertEquals("13", f.info().current().getVersion().getVersion());
             assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = 'bottle_vaults'", Integer.class, schema));
 
             // 2. Test V9 data migration
@@ -234,7 +234,7 @@ class BottleMigrationTests {
                 // Now migrate schema2 to latest (V10)
                 Flyway fV10 = flyway(schema2, postgres.getJdbcUrl()).load();
                 fV10.migrate();
-                assertEquals("12", fV10.info().current().getVersion().getVersion());
+                assertEquals("13", fV10.info().current().getVersion().getVersion());
 
                 // Verify previous data in schema2 is intact
                 Integer orderItemCount = jdbc.queryForObject("SELECT COUNT(*) FROM " + schema2 + ".order_items WHERE id = ?", Integer.class, fix.orderItemId);
