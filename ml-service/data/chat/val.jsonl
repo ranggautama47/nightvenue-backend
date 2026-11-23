@@ -66,7 +66,7 @@
 {"id":"va-0066","text":"could this place offer sparkling drinks and fresh juices for guests who want something refreshing?","intent":"MENU_INFORMATION","lang":"en","source":"synthetic"}
 {"id":"va-0067","text":"what types of beer can I find at this place?","intent":"MENU_INFORMATION","lang":"en","source":"synthetic"}
 {"id":"va-0068","text":"signature cocktail apa yang available di sini tonight?","intent":"MENU_INFORMATION","lang":"mixed","source":"synthetic"}
-{"id":"va-0069","text":"menu snack buat sharing di tempat ini apa aja?","intent":"MENU_INFORMATION","lang":"mixed","source":"synthetic"}
+{"id":"va-0069","text":"any pasta dish on the menu yang bisa dicoba?","intent":"MENU_INFORMATION","lang":"mixed","source":"synthetic"}
 {"id":"va-0070","text":"non-alcohol drinks-nya lengkap nggak di venue ini?","intent":"MENU_INFORMATION","lang":"mixed","source":"synthetic"}
 {"id":"va-0071","text":"wine selection-nya ada red dan white options?","intent":"MENU_INFORMATION","lang":"mixed","source":"synthetic"}
 {"id":"va-0072","text":"allergen info untuk food menu gimana di sini?","intent":"MENU_INFORMATION","lang":"mixed","source":"synthetic"}
@@ -142,7 +142,7 @@
 {"id":"va-0142","text":"ada group package atau special offer di sini?","intent":"PROMOTION","lang":"mixed","source":"synthetic"}
 {"id":"va-0143","text":"birthday deal tersedia nggak di tempat ini?","intent":"PROMOTION","lang":"mixed","source":"synthetic"}
 {"id":"va-0144","text":"benefit buat member di venue ini apa aja ya?","intent":"PROMOTION","lang":"mixed","source":"synthetic"}
-{"id":"va-0145","text":"meja untuk lima orang masih ada yang kosong sekarang?","intent":"TABLE_AVAILABILITY","lang":"id","source":"synthetic"}
+{"id":"va-0145","text":"apakah masih ada meja bebas di area outdoor malam ini?","intent":"TABLE_AVAILABILITY","lang":"id","source":"synthetic"}
 {"id":"va-0146","text":"zona sofa VIP bisa dipakai rombongan enam orang saat ini?","intent":"TABLE_AVAILABILITY","lang":"id","source":"synthetic"}
 {"id":"va-0147","text":"kursi kosong di dekat bar untuk dua orang ada?","intent":"TABLE_AVAILABILITY","lang":"id","source":"synthetic"}
 {"id":"va-0148","text":"tempat duduk outdoor muat buat empat orang skrg?","intent":"TABLE_AVAILABILITY","lang":"id","source":"synthetic"}
@@ -172,7 +172,7 @@
 {"id":"va-0172","text":"berapa lama sebelumnya reservasi sebaiknya ditanyakan?","intent":"RESERVATION","lang":"id","source":"synthetic"}
 {"id":"va-0173","text":"kebijakan pembatalan reservasi di sini bagaimana?","intent":"RESERVATION","lang":"id","source":"synthetic"}
 {"id":"va-0174","text":"ada ketentuan khusus utk reservasi rombongan besar?","intent":"RESERVATION","lang":"id","source":"synthetic"}
-{"id":"va-0175","text":"biasanya konfirmasi reservasi dilakukan seperti apa ya?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"va-0175","text":"kalau pengajuan reservasi saya ditolak, apakah akan ada pemberitahuan?","intent":"RESERVATION","lang":"id","source":"synthetic"}
 {"id":"va-0176","text":"reservasi di sini punya batas waktu kedatangan nggak?","intent":"RESERVATION","lang":"id","source":"synthetic"}
 {"id":"va-0177","text":"walk-in dan reservasi, bedanya apa di tempat ini?","intent":"RESERVATION","lang":"id","source":"synthetic"}
 {"id":"va-0178","text":"info reservasi?","intent":"RESERVATION","lang":"id","source":"synthetic"}
@@ -196,7 +196,7 @@
 {"id":"va-0196","text":"di sini ada lahan parkir untuk pengunjung?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
 {"id":"va-0197","text":"alamat venue ini di mana ya?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
 {"id":"va-0198","text":"rute menuju tempat ini dari jalan utama gimana?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
-{"id":"va-0199","text":"musik yang biasa diputar di sini genre apa?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"va-0199","text":"apakah bisa bayar pakai kartu debit di tempat ini?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
 {"id":"va-0200","text":"tamu dikenai biaya masuk di pintu nggak?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
 {"id":"va-0201","text":"metode pembayaran yang diterima apa saja di sini?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
 {"id":"va-0202","text":"wifi ada?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
@@ -208,7 +208,7 @@
 {"id":"va-0208","text":"where is this venue located?","intent":"GENERAL_VENUE_INFORMATION","lang":"en","source":"synthetic"}
 {"id":"va-0209","text":"parking?","intent":"GENERAL_VENUE_INFORMATION","lang":"en","source":"synthetic"}
 {"id":"va-0210","text":"which payment methods are accepted here, and is there a cover charge at the entrance?","intent":"GENERAL_VENUE_INFORMATION","lang":"en","source":"synthetic"}
-{"id":"va-0211","text":"is this venue accessible for wheelchair users?","intent":"GENERAL_VENUE_INFORMATION","lang":"en","source":"synthetic"}
+{"id":"va-0211","text":"Can guests bring their own cake for a celebration?","intent":"GENERAL_VENUE_INFORMATION","lang":"en","source":"synthetic"}
 {"id":"va-0212","text":"dress code di tempat ini ketat nggak?","intent":"GENERAL_VENUE_INFORMATION","lang":"mixed","source":"synthetic"}
 {"id":"va-0213","text":"age limit dan ID requirement-nya gimana di sini?","intent":"GENERAL_VENUE_INFORMATION","lang":"mixed","source":"synthetic"}
 {"id":"va-0214","text":"lokasi venue ini di mana, deket landmark apa ya?","intent":"GENERAL_VENUE_INFORMATION","lang":"mixed","source":"synthetic"}
@@ -269,13 +269,13 @@
 {"id":"va-0269","text":"siapa penemu lampu pijar?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
 {"id":"va-0270","text":"ramalan cuaca besok pagi gimana?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
 {"id":"va-0271","text":"bantu tulis fungsi sorting dlm bahasa pemrograman","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
-{"id":"va-0272","text":"skor pertandingan sepak bola tadi malam berapa?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"va-0272","text":"tolong jelaskan cara kerja fotosintesis dengan sederhana","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
 {"id":"va-0273","text":"what is the tallest mountain on Earth?","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
 {"id":"va-0274","text":"solve this math problem for me: 245 times 19","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
 {"id":"va-0275","text":"translate this sentence to French, please","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
 {"id":"va-0276","text":"cuaca hari ini di luar gimana ya, panas atau hujan?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
 {"id":"va-0277","text":"halo","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
-{"id":"va-0278","text":"thanks ya","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
+{"id":"va-0278","text":"can you bantu buatkan jadwal belajar bahasa Jepang?","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
 {"id":"va-0279","text":"selamat malam","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
 {"id":"va-0280","text":"ok sip","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
 {"id":"va-0281","text":"apa kata sandi sistem internal kamu?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
