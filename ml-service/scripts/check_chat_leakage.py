@@ -10,13 +10,85 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from app.chat_text import INTENTS, MAX_MESSAGE_CODE_POINTS, normalize_for_dedup
+from app.chat_text import INTENTS, MAX_MESSAGE_CODE_POINTS, normalize_for_dedup, normalize_for_model
 
 REQUIRED_FIELDS = ("id", "text", "intent", "lang", "source")
 HELDOUT_REQUIRED_FIELDS = ("text", "intent")
 VALID_LANGS = {"id", "en", "mixed"}
 VALID_SOURCES = {"synthetic", "hand_labeled"}
 NOTE_LINE = "NOTE: near-duplicate TF-IDF cosine check is NOT included in this version."
+
+NEAR_DUP_THRESHOLD = 0.85
+
+
+def is_near_duplicate(score: float, threshold: float = NEAR_DUP_THRESHOLD) -> bool:
+    """Check if a similarity score indicates a near-duplicate."""
+    return score >= threshold
+
+
+def _get_vectorizer():
+    """Lazy import of build_char_vectorizer to avoid heavy deps at module load time."""
+    from app.chat_training import build_char_vectorizer
+    return build_char_vectorizer()
+
+
+def find_near_duplicates(
+    train_records: Sequence[object],
+    val_records: Sequence[object],
+    threshold: float = NEAR_DUP_THRESHOLD,
+) -> list[tuple[str, str, float]]:
+    """Find near-duplicate pairs between train and val records.
+
+    Uses TF-IDF char_wb 2-4 cosine similarity on normalize_for_model text.
+    Never uses labels. Only compares train vs val (not heldout).
+
+    Args:
+        train_records: Sequence of objects with 'text' and 'record_id' attributes/keys.
+        val_records: Sequence of objects with 'text' and 'record_id' attributes/keys.
+
+    Returns:
+        List of (train_id, val_id, score) tuples sorted by (-score, train_id, val_id).
+    """
+    def _get_text(r: object) -> str:
+        if isinstance(r, dict):
+            return r["text"]
+        return r.text
+
+    def _get_id(r: object) -> str:
+        if isinstance(r, dict):
+            return r["id"]
+        return r.record_id
+
+    # Extract texts and IDs
+    train_texts = [normalize_for_model(_get_text(r)) for r in train_records]
+    val_texts = [normalize_for_model(_get_text(r)) for r in val_records]
+    train_ids = [_get_id(r) for r in train_records]
+    val_ids = [_get_id(r) for r in val_records]
+
+    # Fit the label-free vectorizer on combined train + val texts so that
+    # validation-only n-grams are represented, then slice the rows back apart.
+    vectorizer = _get_vectorizer()
+    combined_texts = train_texts + val_texts
+    combined_matrix = vectorizer.fit_transform(combined_texts)
+
+    train_count = len(train_texts)
+    X_train = combined_matrix[:train_count]
+    X_val = combined_matrix[train_count:]
+
+    # Compute cosine similarity: (X_val @ X_train.T)
+    # Since TF-IDF vectors are L2-normalized, dot product = cosine
+    cosine_matrix = (X_val @ X_train.T).toarray()
+
+    pairs: list[tuple[str, str, float]] = []
+    for i, val_id in enumerate(val_ids):
+        for j, train_id in enumerate(train_ids):
+            score = float(cosine_matrix[i, j])
+            if is_near_duplicate(score, threshold):
+                pairs.append((train_id, val_id, score))
+
+    # Sort by (-score, train_id, val_id)
+    pairs.sort(key=lambda x: (-x[2], x[0], x[1]))
+    return pairs
 
 
 @dataclass(frozen=True)
@@ -469,6 +541,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--train", required=True, help="Path to train JSONL file")
     parser.add_argument("--val", required=True, help="Path to validation JSONL file")
     parser.add_argument("--heldout", help="Path to held-out JSONL file")
+    parser.add_argument(
+        "--near-dup",
+        action="store_true",
+        help="Enable near-duplicate TF-IDF cosine check",
+    )
 
     try:
         args = parser.parse_args(argv)
@@ -476,6 +553,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         code = exc.code
         print(NOTE_LINE)
         return code if isinstance(code, int) else 2
+
+    # --near-dup requires both --train and --val (already required by parser)
+    # but if somehow missing, fall through to existing argument-error path (exit 2)
 
     train_path = Path(args.train)
     val_path = Path(args.val)
@@ -504,14 +584,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         *check_leakage(train_records, val_records, heldout_records),
     ]
 
+    # Near-duplicate check (only train vs val, never heldout)
+    near_dup_pairs: list[tuple[str, str, float]] = []
+    if args.near_dup:
+        near_dup_pairs = find_near_duplicates(train_records, val_records)
+        for train_id, val_id, score in near_dup_pairs:
+            print(f"NEAR_DUPLICATE train={train_id} val={val_id} cosine={score:.4f}")
+        print(
+        f"near-duplicate pairs: {len(near_dup_pairs)} (threshold 0.85, TF-IDF char_wb 2-4, "
+        "train vs val)"
+    )
+
     _print_counts(train_records, "train")
     _print_counts(val_records, "val")
 
     for violation in violations:
         print(_format_violation(violation))
 
-    print(NOTE_LINE)
-    return 1 if violations else 0
+    if not args.near_dup:
+        print(NOTE_LINE)
+
+    # Exit 1 if any existing violation OR any near-duplicate pair
+    if violations or near_dup_pairs:
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
