@@ -21,10 +21,10 @@ Setiap fase: satu atau lebih PR; penulis ≠ reviewer; test hijau; output test d
 
 | 8 | Cashier shift | 1 | Kritis | IN PROGRESS — implementation and targeted tests completed; full regression and PR approval pending |
 | 9 | ML forecasting | 2 | Kritis (evaluasi) | NOT STARTED |
-| 10 | Hybrid chat | 2 | Kritis (privasi key) | NOT STARTED |
+| 10 | Hybrid chat | 2 | Kritis (privasi key) | IN PROGRESS |
 | 11 | Bukti, hardening, README | — | PM + Owner | NOT STARTED |
 
-Status di atas merujuk checklist tiap fase: Fase 8–11 = NOT STARTED (checklist Fase 8 — submit/review/variance/RECONCILED — belum dikerjakan). Fondasi shift (buka shift dan stale `OPEN → MANAGER_REVIEW`) sudah masuk Fase 6 dan dibuktikan `ShiftIntegrationTests`; itu bukan checklist Fase 8. Status Fase 0, 1, 2, 3, 4, dan 5 diturunkan dari bukti Butir di bawah; item yang tidak dapat diverifikasi ditandai eksplisit, bukan diasumsikan.
+Status di atas merujuk checklist tiap fase; status Fase 8 dan Fase 9 mengikuti baris tabel dan tidak diubah oleh pembaruan ini. Fase 10 berstatus IN PROGRESS: sub-fase 10.1 dan 10.2 (Round A sampai D) diterima PM, sedangkan sub-fase 10.3 sampai 10.7 belum dimulai. Fase 11: NOT STARTED. Fondasi shift (buka shift dan stale `OPEN → MANAGER_REVIEW`) sudah masuk Fase 6 dan dibuktikan `ShiftIntegrationTests`; itu bukan checklist Fase 8. Status Fase 0, 1, 2, 3, 4, dan 5 diturunkan dari bukti Butir di bawah; item yang tidak dapat diverifikasi ditandai eksplisit, bukan diasumsikan.
 
 Pemetaan minggu (target): M1 = Fase 0–2 (+ awal 3); M2 = Fase 3–5; M3 = Fase 6–8; M4 = Fase 9–11.
 
@@ -236,7 +236,30 @@ Evidence C held-out MAE berasal dari evaluasi offline pada tiga window sintetis 
 7. Route hanya `POST /api/v1/forecasts`. Tidak ada UNIQUE atau idempotensi untuk forecast; dua request sukses membuat dua baris.
 
 ### Fase 10 — Hybrid chat (Tier 2)
-**FR**: CHAT-01..12.
+**FR**: FR-ML-01, FR-ML-02, FR-CHAT-01..12, BR-24.
+
+**Status per sub-fase:**
+
+| Sub-fase | Cakupan | Status | Komit |
+|---|---|---|---|
+| 10.1 | Fondasi database/skema chat | ACCEPTED | `58f6063` |
+| 10.2 Round A | Tahap persiapan classifier (hash tidak dicatat di dokumen ini) | ACCEPTED | - |
+| 10.2 Round B1 | Tahap persiapan classifier (hash tidak dicatat di dokumen ini) | ACCEPTED | - |
+| 10.2 Round B2 | Model K, evaluator, dan laporan validasi B2 resmi | CLOSED (PM) | `6f37e80`, `1a555f9` |
+| 10.2 Round C | Endpoint internal `POST /ml/chat/classify` di ml-service | ACCEPTED (PM) | `ce0598c` |
+| 10.2 Round D | Packaging Docker dan gerbang CI; CI run #5 hijau | ACCEPTED (PM) | `3e1f2a5`, `f27f056` |
+| 10.3 | Spring chat API, integrasi classifier, implementasi routing policy ADR-011, kontrak OpenAPI, threshold milik Spring | NOT STARTED | - |
+| 10.4 | BYOK Gemini/Groq | NOT STARTED | - |
+| 10.5 | Telemetry | NOT STARTED | - |
+| 10.6 | Integrasi, security, acceptance, dan independent heldout | NOT STARTED | - |
+| 10.7 | Regresi akhir dan review README akhir | NOT STARTED | - |
+
+> [!IMPORTANT] Sub-fase 10.1 hanya fondasi database/skema chat; itu bukan Spring chat API, routing, atau integrasi (10.3). Endpoint classifier sudah ada di ml-service (10.2 Round C), tetapi Spring belum memanggilnya.
+
+**val_accept_b2.jsonl adalah validation set** (dipakai untuk seleksi model dan theta), **bukan blind test**. Set held-out independen (Fase 10.6) belum ada di repositori ini.
+
+**Theta canonical**: MENUNGGU KEPUTUSAN PM. Nilai evaluasi B2: Python 3.10.6 menghasilkan `0.2663504950761665`; Python 3.12.9 menghasilkan `0.2663504950761663`. Perbedaan ada pada digit ke-16 (floating-point platform). Nilai tidak dibulatkan; keputusan nilai kanonik untuk konfigurasi Spring diserahkan ke PM.
+
 **DoD**
 - [ ] 11 intent; θ dipilih dari validation set; held-out test hanya dipakai sekali
 - [ ] Laporan P/R/F1 per kelas, confusion matrix, baseline keyword, aturan anti-leakage

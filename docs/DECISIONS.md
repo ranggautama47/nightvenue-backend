@@ -28,6 +28,8 @@ Satu-satunya tempat ADR. `APPLICATION_ARCHITECTURE.md` hanya menunjuk ke sini.
 | 020 | Verifikasi kepemilikan botol (QR token) | Accepted |
 | 021 | Phase 5C VOID dan SERVE | Accepted |
 | 022 | Xendit Payment Requests v3, M3-A/V9 scope, and M4 contract notes | **Approved with binding notes** |
+| 023 | Runbook operasional: diagnostik read-only untuk payment QRIS Xendit yang belum tuntas (M5-C) | Accepted |
+| 024 | Model K untuk Chat Intent Classifier dan Validasi B2 | Accepted untuk konfigurasi Model K, dataset kanonik, protokol validasi B2, pengecualian near-duplicate, dan endpoint classifier internal (Round B2 CLOSED, Round C dan Round D diterima PM; Round D: komit 3e1f2a5 dan f27f056, CI run #5 hijau). Nilai theta kanonik untuk Spring: MENUNGGU KEPUTUSAN PM. |
 
 ---
 
@@ -835,3 +837,48 @@ Catatan: butir 7 (reviewer bukan pemilik shift, BR-30) dan aturan urutan lock gl
 | 6 | Snap.js dihapus dari rencana Xendit; QR aman dari backend, polling GET NightVenue, tanpa interval atau bentuk payload asumsi | FRONTEND_SCOPE.md, DESIGN_SYSTEM.md |
 
 Approved commit order: M3-A only; V9 plus `PaymentSchemaMigrationTests`; then documentation and `.env.example`. Full regression must pass before commits. Do not stage unrelated files or push to main.
+
+---
+
+## ADR-024 — Model K untuk Chat Intent Classifier dan Validasi B2
+
+### Status
+Accepted untuk konfigurasi Model K, dataset kanonik, protokol validasi B2, pengecualian near-duplicate, dan endpoint classifier internal (Round B2 CLOSED, Round C dan Round D diterima PM; Round D: komit 3e1f2a5 dan f27f056, CI run #5 hijau). Nilai theta kanonik untuk Spring: MENUNGGU KEPUTUSAN PM.
+
+### Context
+Phase 10 membutuhkan classifier intent untuk 11 kelas: `OPENING_HOURS`, `VENUE_AREA`, `MENU_INFORMATION`, `BOTTLE_KEEPING`, `MINIMUM_SPEND`, `PROMOTION`, `TABLE_AVAILABILITY`, `RESERVATION`, `GENERAL_VENUE_INFORMATION`, `ADVANCED_CONVERSATION`, `OUT_OF_SCOPE`. Classifier harus dapat dilatih ulang secara deterministik, dikemas ke dalam Docker image, dan diverifikasi dengan evaluator resmi di CI (fase 10.2). Dataset pelatihan kanonik: `train_v2.jsonl` (887 records; SHA-256: `41177db35fac9331e9e0ded94cb298c21f7521d47d6db571db6fdc9b4928f3b6`). Validation set B2 untuk seleksi theta: `val_accept_b2.jsonl` (296 records; SHA-256: `b8bcd2f611f7ca6e84ad8745c288edc8b019137ec12b4c32b387ac3abd1f71ef`). Held-out evaluation set merupakan gerbang independen Fase 10.6 dan belum ada di repositori ini.
+
+### Decision
+- **Arsitektur Model K**: TF-IDF + Logistic Regression. Artefak dibangun offline dengan `scripts/build_chat_model.py --out-dir models/chat_modelk_spec` dan dikemas ke Docker image saat build; tidak di-commit ke Git.
+- **Model version**: `chat-modelk-lr-d98a37b805f0f770` (deterministik: diverifikasi dengan pelatihan berulang pada `train_v2.jsonl`).
+- **Confidence threshold (θ)**: MENUNGGU KEPUTUSAN PM. Nilai evaluasi B2 menurut platform: Python 3.10.6 menghasilkan `0.2663504950761665`; Python 3.12.9 menghasilkan `0.2663504950761663`. Perbedaan ada pada digit ke-16 (floating-point platform). Nilai tidak dibulatkan; keputusan nilai kanonik untuk konfigurasi Spring (10.3) diserahkan ke PM.
+- **val_accept_b2.jsonl** adalah validation set (dipakai untuk perbandingan model dan pemilihan theta), sehingga hasilnya optimistis dan bukan estimasi generalisasi.
+- **Metrik evaluasi B2 pada theta terpilih** (validation set, bukan generalization estimate):
+  - Raw 11-class accuracy: `0.912162`; macro-F1: `0.892131`
+  - Local macro-F1 (routed): `0.893748`
+  - OOS recall (routed): `0.972222`; OOS precision: `0.954545`
+  - False-local rate: `0.039370`; correct local coverage: `0.887574`
+  - Counts: train=887, val=296, local=169, advanced=19, oos=108
+- **Leakage policy**: `val_accept_b2.jsonl` dikonstruksi dari `val_accept.jsonl` (300 records) dengan mengeluarkan 4 record (`va-0670`, `va-0698`, `va-0890`, `va-0934`) yang normalized text-nya sama persis dengan normalized text di `train_v2.jsonl`. Near-duplicate exception yang didokumentasikan: `tr-0723` / `va-0861` (`OUT_OF_SCOPE`, cosine `0.9059`) — diizinkan oleh PM.
+- **CI gates (Fase 10.2 Round D)**: ruff, pytest, exact leakage check, near-duplicate gate, Model K build, B2 evaluator reproducibility check, Docker build, container smoke tests. CI GREEN pada commit `f27f056`, runner ubuntu-24.04, Python 3.12.9 (CI run #5).
+
+### Related ADRs
+- ADR-011 relates to hybrid chat routing (11 intent, θ, jalur lokal/BYOK/ADVANCED_AI_REQUIRED).
+- ADR-014 implements batas FastAPI dan aturan evaluasi ML (leakage, baseline, label sintetis).
+- ADR-017 clarifies Scope Month-1, deferred scope, urutan potong.
+
+### Consequences
+- Model K artefak tidak di-commit; harus dibangun ulang di setiap Docker image build.
+- Theta canonical menunggu keputusan PM sebelum dapat dikonfigurasi di Spring (Fase 10.3).
+- Metrik B2 adalah validation set yang dipakai untuk perbandingan model dan pemilihan theta, sehingga hasilnya optimistis dan bukan estimasi generalisasi; generalization estimate membutuhkan held-out evaluation (Fase 10.6).
+- Sub-fase 10.3 (Spring chat API) belum diimplementasikan; ADR-011 routing belum aktif di production.
+
+### Open items
+- Nilai theta kanonik untuk Spring (10.3): MENUNGGU KEPUTUSAN PM (nilai platform di atas).
+- LABEL_GUIDE reservation clarification (butuh persetujuan PM terpisah).
+- Carry-over logger.exception dan test jalur 500 di chat_classify.py.
+- Timeout total chat 2000 ms (Fase 10.3).
+- Held-out evaluation set: Fase 10.6, belum ada di repo.
+- Telemetry (Bukti D): Fase 10.5.
+- Independent heldout evaluation: Fase 10.6.
+- Spring chat API, BYOK, `chat_route_logs`: Fase 10.3–10.5, belum dimulai.

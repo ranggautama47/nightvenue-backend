@@ -9,7 +9,8 @@ Backend for **NightVenue**, a fictional nightlife venue operations platform (POS
 | Phase 1 foundation (skeleton, Docker Compose, CI) | Partial — version pins are recorded; Docker Compose startup, CI status, the hosting spike and the repository secret audit are NOT VERIFIED (see `docs/PHASES.md` Phase 1). |
 | Phase 2 database, business date, demo seed | Implemented |
 | Business features (orders, payments, inventory, ...) | Order open/add items, whole-order VOID, per-item SERVE implemented; payments implemented — M3-A payment core + GET Payment, M3-B Xendit Create, M4-A authenticated webhook + Status API verification + settlement, M4-B opt-in reconciliation (all implemented and tested locally); BR-05 minimum-spend guard is implemented for CASH, CARD_EDC, and QRIS and locally tested. Xendit provider validation remains pending. |
-| Performance and ML metrics | None published. Numbers will appear only after they are measured |
+| Performance and ML metrics | Validation-set results for the chat classifier are documented under `ml-service/reports/`; they are not a blind test. No production or independent heldout metrics exist yet, and no headline numbers are published here. |
+| Phase 10 — Hybrid chat classifier (ML service) | In progress: Model K classifier and its internal FastAPI endpoint are implemented in `ml-service`; the Spring chat API, the Spring implementation of the ADR-011 routing policy, optional BYOK LLM, telemetry and independent heldout acceptance are not done yet. See [`ml-service/README.md`](ml-service/README.md). |
 | Hosting | Not decided (ADR-019 is *Proposed*) |
 
 ## Stack
@@ -21,13 +22,13 @@ Spring Boot (Java), FastAPI (Python), PostgreSQL, Redis, Docker Compose, GitHub 
 | Service | Role | Host access |
 |---|---|---|
 | `api` | Spring Boot. System of record and all business logic | `localhost:8080` |
-| `ml-service` | FastAPI. Inventory forecasting; chat intent classifier not implemented | **Not published** (internal Docker network only) |
+| `ml-service` | FastAPI. Inventory forecasting and chat intent classification (internal only); no LLM and no database access | **Not published** (internal Docker network only) |
 | `postgres` | PostgreSQL | `127.0.0.1:5433` (dev only) |
 | `redis` | Cache, rate limit, refresh tokens | `127.0.0.1:6379` (dev only) |
 
 ## Inventory forecasting
 
-NightVenue forecasts ingredient demand from the inventory ledger through `POST /api/v1/forecasts`, available to ADMIN and MANAGER. The response shows the selected method and both regression and baseline backtest MAEs; each successful request adds a row to `stock_forecasts`. The ML service stays on the internal Docker network. Series gaps become zero and negative daily net values are clamped; later voids remain dated on the void day, and the evaluation uses synthetic data rather than production accuracy. The intent classifier (FR-ML-01/02) is not yet implemented.
+NightVenue forecasts ingredient demand from the inventory ledger through `POST /api/v1/forecasts`, available to ADMIN and MANAGER. The response shows the selected method and both regression and baseline backtest MAEs; each successful request adds a row to `stock_forecasts`. The ML service stays on the internal Docker network. Series gaps become zero and negative daily net values are clamped; later voids remain dated on the void day, and the evaluation uses synthetic data rather than production accuracy. The internal chat intent classifier endpoint (FR-ML-01) is implemented in `ml-service`; FR-ML-02 has validation-set evaluation results only, and the independent heldout evaluation remains pending (Phase 10.6). The Spring chat API (FR-CHAT-01..12) is not implemented yet. See [`ml-service/README.md`](ml-service/README.md) for classifier details, model build, Docker packaging and CI gates.
 
 ## Quick start (Docker)
 
@@ -119,6 +120,11 @@ Design documents live in [`docs/`](docs/README.md) and are the single source of 
 - Shift submit, manager review, cash variance reconciliation, and background cutoff scheduler are implemented (Phase 8). The cutoff scheduler defaults to disabled.
 - `provider_transaction_id` mapping to Xendit `payment_id` remains OPEN.
 - BR-05 minimum spend is enforced for CASH, CARD_EDC, and QRIS through `PaymentService.checkMinimumSpend` and is covered by local integration tests. This does not indicate Xendit provider validation; sandbox validation remains pending. The guard rejects an exhausting payment below the order's minimum-spend snapshot before the provider call.
+- Chat classifier metrics come from a validation set that was also used for model comparison and threshold selection; they are not a blind test.
+- An independent heldout evaluation is a mandatory Phase 10.6 acceptance gate and does not exist yet.
+- Chat is not reachable through the Spring API yet; the classifier endpoint is internal to `ml-service`.
+- Model binaries are built inside the Docker image and are not committed to Git.
+- One documented near-duplicate exception exists between training and validation data (see ADR-024).
 
 ### Bottle keeping
 
