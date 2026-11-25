@@ -7,3 +7,9 @@ tests/
 requirements-dev.txt
 ruff.toml
 .env
+models/
+reports/
+data/**
+!data/chat/train_v2.jsonl
+conftest.py
+README.md

@@ -2,7 +2,7 @@ name: CI — ML Service
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/**"]
     paths:
       - "ml-service/**"
       - ".github/workflows/ci-ml.yml"
@@ -27,10 +27,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4.2.2
 
-      - name: Set up Python 3.12
+      - name: Set up Python 3.12.9
         uses: actions/setup-python@v5.4.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.9"
 
       - name: Install runtime + dev dependencies
         working-directory: ml-service
@@ -44,11 +44,61 @@ jobs:
 
       - name: Run pytest
         working-directory: ml-service
-        run: pytest tests/ -v
+        run: pytest tests/ -q
+
+      - name: Exact leakage check (hard gate)
+        working-directory: ml-service
+        run: python -m scripts.check_chat_leakage --train data/chat/train_v2.jsonl --val data/chat/val_accept_b2.jsonl
+
+      - name: Near-duplicate gate
+        working-directory: ml-service
+        run: python -m scripts.ci_near_dup_gate
+
+      - name: Build Model K smoke
+        working-directory: ml-service
+        run: python -m scripts.build_chat_model --out-dir models/chat_modelk_spec
+
+      - name: Evaluate Model K (B2 reproducibility check)
+        working-directory: ml-service
+        run: |
+          python -m scripts.evaluate_chat_classifier \
+            --model-dir models/chat_modelk_spec \
+            --train data/chat/train_v2.jsonl \
+            --val data/chat/val_accept_b2.jsonl \
+            --out-md "${{ runner.temp }}/b2_eval.md" \
+            --out-json "${{ runner.temp }}/b2_eval_metrics.json"
 
       - name: Docker build verification
         uses: docker/build-push-action@v6.15.0
         with:
           context: ./ml-service
           push: false
+          load: true
           tags: nightvenue-ml:ci-check
+
+      - name: Container smoke tests
+        working-directory: ml-service
+        run: |
+          docker run -d --name ml-smoke-ok -e ML_INTERNAL_TOKEN=ci-smoke-token nightvenue-ml:ci-check
+          docker run -d --name ml-smoke-missing -e ML_INTERNAL_TOKEN=ci-smoke-token -e CHAT_MODEL_DIR=/app/does_not_exist nightvenue-ml:ci-check
+          for name in ml-smoke-ok ml-smoke-missing; do
+            ready=0
+            for i in $(seq 1 30); do
+              if docker exec "$name" python -c "import urllib.request; r = urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2); exit(0 if r.status == 200 else 1)" >/dev/null 2>&1; then
+                ready=1
+                break
+              fi
+              sleep 2
+            done
+            if [ "$ready" -ne 1 ]; then
+              echo "Container $name failed to become healthy within 60s"
+              docker logs "$name" || true
+              exit 1
+            fi
+          done
+          docker exec -i -e SMOKE_MODE=ok -e EXPECTED_MODEL_VERSION=chat-modelk-lr-d98a37b805f0f770 ml-smoke-ok python - < scripts/container_smoke.py
+          docker exec -i -e SMOKE_MODE=missing ml-smoke-missing python - < scripts/container_smoke.py
+
+      - name: Cleanup smoke containers
+        if: always()
+        run: docker rm -f ml-smoke-ok ml-smoke-missing || true
