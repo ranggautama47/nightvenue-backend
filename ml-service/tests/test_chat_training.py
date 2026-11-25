@@ -55,7 +55,7 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
 
 def _train_and_save(tmp_path: Path) -> Path:
     records = _make_records()
-    config = TrainConfig(c_grid=(1.0,), cv_folds=2)
+    config = TrainConfig()
     result = train(records, config)
     out_dir = tmp_path / "models"
     save_artifacts(result, dataset_fingerprint(records), out_dir)
@@ -194,7 +194,7 @@ class TestLoadDataset:
 class TestTrainSaveLoadPredict:
     def test_train_save_load_predict(self, tmp_path: Path) -> None:
         records = _make_records()
-        config = TrainConfig(c_grid=(1.0,), cv_folds=2)
+        config = TrainConfig()
         result = train(records, config)
 
         out_dir = tmp_path / "models"
@@ -233,7 +233,7 @@ class TestTrainSaveLoadPredict:
 
     def test_determinism(self, tmp_path: Path) -> None:
         records = _make_records()
-        config = TrainConfig(c_grid=(1.0,), cv_folds=2)
+        config = TrainConfig()
 
         result1 = train(records, config)
         out_dir1 = tmp_path / "models1"
@@ -255,7 +255,7 @@ class TestTrainSaveLoadPredict:
 
     def test_model_version_changes_with_text(self, tmp_path: Path) -> None:
         records = _make_records()
-        config = TrainConfig(c_grid=(1.0,), cv_folds=2)
+        config = TrainConfig()
         result1 = train(records, config)
 
         records2 = [dict(r) for r in records]
@@ -266,8 +266,8 @@ class TestTrainSaveLoadPredict:
 
     def test_model_version_changes_with_config(self, tmp_path: Path) -> None:
         records = _make_records()
-        config1 = TrainConfig(c_grid=(1.0,), cv_folds=2)
-        config2 = TrainConfig(c_grid=(2.0,), cv_folds=2)
+        config1 = TrainConfig(c=1.0)
+        config2 = TrainConfig(c=2.0)
         result1 = train(records, config1)
         result2 = train(records, config2)
 
@@ -275,7 +275,7 @@ class TestTrainSaveLoadPredict:
 
     def test_model_version_same_after_crlf_rewrite(self, tmp_path: Path) -> None:
         records = _make_records()
-        config = TrainConfig(c_grid=(1.0,), cv_folds=2)
+        config = TrainConfig()
 
         path1 = tmp_path / "train1.jsonl"
         _write_jsonl(path1, records)
@@ -295,7 +295,7 @@ class TestTrainSaveLoadPredict:
 
     def test_load_model_raises_on_altered_artifact(self, tmp_path: Path) -> None:
         records = _make_records()
-        config = TrainConfig(c_grid=(1.0,), cv_folds=2)
+        config = TrainConfig()
         result = train(records, config)
         out_dir = tmp_path / "models"
         save_artifacts(result, dataset_fingerprint(records), out_dir)
@@ -309,7 +309,7 @@ class TestTrainSaveLoadPredict:
 
     def test_load_model_raises_on_missing_meta(self, tmp_path: Path) -> None:
         records = _make_records()
-        config = TrainConfig(c_grid=(1.0,), cv_folds=2)
+        config = TrainConfig()
         result = train(records, config)
         out_dir = tmp_path / "models"
         save_artifacts(result, dataset_fingerprint(records), out_dir)
@@ -322,7 +322,7 @@ class TestTrainSaveLoadPredict:
 
     def test_load_model_raises_on_library_version_mismatch(self, tmp_path: Path) -> None:
         records = _make_records()
-        config = TrainConfig(c_grid=(1.0,), cv_folds=2)
+        config = TrainConfig()
         result = train(records, config)
         out_dir = tmp_path / "models"
         save_artifacts(result, dataset_fingerprint(records), out_dir)
@@ -395,7 +395,7 @@ class TestTrainSaveLoadPredict:
 
     def test_train_raises_on_insufficient_records_per_intent(self, tmp_path: Path) -> None:
         records = []
-        for intent in INTENTS:
+        for intent in list(INTENTS)[1:]:
             records.append({
                 "id": f"{intent.lower()}-0",
                 "text": f"{intent.lower()} contoh",
@@ -403,10 +403,10 @@ class TestTrainSaveLoadPredict:
                 "lang": "en",
                 "source": "synthetic",
             })
-        config = TrainConfig(c_grid=(1.0,), cv_folds=2)
+        config = TrainConfig()
         with pytest.raises(DatasetError) as exc:
             train(records, config)
-        assert "need at least 2" in str(exc.value)
+        assert "need at least 1" in str(exc.value)
 
     def test_duplicated_constants_match_checker(self) -> None:
         assert _VALID_LANGS == VALID_LANGS
@@ -1077,10 +1077,10 @@ class TestBuildCharVectorizer:
 class TestComputeModelVersion:
     def test_format(self) -> None:
         records = _make_records()
-        config = TrainConfig(c_grid=(1.0,), cv_folds=2)
+        config = TrainConfig()
         version = compute_model_version(records, config)
-        assert version.startswith("chat-charwb-lr-")
-        assert len(version) == len("chat-charwb-lr-") + 16
+        assert version.startswith("chat-modelk-lr-")
+        assert len(version) == len("chat-modelk-lr-") + 16
 
 
 class TestTrainConfig:
@@ -1088,10 +1088,16 @@ class TestTrainConfig:
         config = TrainConfig()
         d = config.config_dict()
         assert d["seed"] == 42
-        assert d["c_grid"] == [0.5, 1.0, 2.0, 5.0]
-        assert d["cv_folds"] == 5
-        assert d["max_iter"] == 1000
-        assert d["analyzer"] == "char_wb"
-        assert d["ngram_range"] == [2, 4]
+        assert d["c"] == 10.0
+        assert d["max_iter"] == 3000
         assert d["solver"] == "lbfgs"
-        assert d["scoring"] == "f1_macro"
+        assert d["features"]["char_wb"]["analyzer"] == "char_wb"
+        assert d["features"]["char_wb"]["ngram_range"] == [2, 4]
+        assert d["features"]["char_wb"]["sublinear_tf"] is True
+        assert d["features"]["word"]["analyzer"] == "word"
+        assert d["features"]["word"]["ngram_range"] == [1, 2]
+        assert d["features"]["word"]["sublinear_tf"] is True
+        assert d["features"]["word"]["token_pattern"] == r"(?u)\b\w+\b"
+        assert d["class_weight"] == "(N/(K*count_c))**0.5"
+        assert d["cv"] == "none"
+        assert d["scoring"] == "fixed"

@@ -88,7 +88,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"TRAIN_FINGERPRINT={result.train_fingerprint}")
     print(f"VAL_FINGERPRINT={val_fp}")
     print(f"CV_BEST_C={result.cv_best_params.get('clf__C', 'N/A')}")
-    print(f"CV_BEST_F1_MACRO={result.cv_best_score:.6f}")
+    cv_score_str = (
+        f"{result.cv_best_score:.6f}"
+        if result.cv_best_score is not None
+        else "N/A (fixed configuration; no cross-validation)"
+    )
+    print(f"CV_BEST_F1_MACRO={cv_score_str}")
     for i, (text, pred) in enumerate(zip(PROBE_TEXTS, probe_preds), 1):
         print(f"PROBE {i} {pred.intent} {pred.confidence:.6f}")
     print(

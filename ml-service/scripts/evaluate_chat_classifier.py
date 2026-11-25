@@ -1,9 +1,10 @@
-﻿"""Evaluate the chat intent classifier on the validation set and select a threshold."""
+"""Evaluate the chat intent classifier on val_accept_b2 and select a threshold."""
 
 from __future__ import annotations
 
 import argparse
 import sys
+from collections import Counter
 from typing import Any, Sequence
 
 from app.chat_baselines import KeywordBaseline, LengthBaseline
@@ -26,27 +27,42 @@ from app.chat_training import (
     load_dataset,
     load_model,
     predict_batch,
+    train,
 )
 
-FROZEN_MODEL_VERSION = "chat-charwb-lr-0a01d14c6704ab37"
+FROZEN_MODEL_VERSION = "chat-modelk-lr-d98a37b805f0f770"
 FROZEN_TRAIN_FINGERPRINT = (
-    "b049cffce6283ef118ef9f5f6ad6568e550995ee41cce37eb4fdf8b3e4481a37"
+    "651e5e5fa095c712ed77d8794b810d52fd0cab63cbd5e3ebba0abea466f7b185"
 )
 FROZEN_VAL_FINGERPRINT = (
-    "3af03a264b6c85b9755a76e4445c343c3b4583f78e63eed2ac0c75ff2727eb8a"
+    "337870a23c44ed6d58f97246d794fc6b21aa87eaf787f27f85e66d97b0e6eee8"
 )
-FROZEN_TRAIN_COUNT = 576
-FROZEN_VAL_COUNT = 288
-FROZEN_OOS_COUNT = 48
-FROZEN_ADVANCED_COUNT = 24
-FROZEN_LOCAL_COUNT = 216
+FROZEN_TRAIN_COUNT = 887
+FROZEN_VAL_COUNT = 296
+FROZEN_OOS_COUNT = 108
+FROZEN_ADVANCED_COUNT = 19
+FROZEN_LOCAL_COUNT = 169
+FROZEN_VAL_INTENT_COUNTS = {
+    "OPENING_HOURS": 18,
+    "VENUE_AREA": 18,
+    "MENU_INFORMATION": 19,
+    "BOTTLE_KEEPING": 19,
+    "MINIMUM_SPEND": 19,
+    "PROMOTION": 19,
+    "TABLE_AVAILABILITY": 19,
+    "RESERVATION": 19,
+    "GENERAL_VENUE_INFORMATION": 19,
+    "ADVANCED_CONVERSATION": 19,
+    "OUT_OF_SCOPE": 108,
+}
+# Probe expectations taken once from frozen Model K output and disclosed.
 FROZEN_PROBE_EXPECTED = (
-    ("OPENING_HOURS", "0.786016"),
-    ("GENERAL_VENUE_INFORMATION", "0.704875"),
-    ("PROMOTION", "0.888151"),
-    ("BOTTLE_KEEPING", "0.985561"),
-    ("OUT_OF_SCOPE", "0.923350"),
-    ("OPENING_HOURS", "0.801434"),
+    ("OPENING_HOURS", "0.961184"),
+    ("GENERAL_VENUE_INFORMATION", "0.952110"),
+    ("PROMOTION", "0.984285"),
+    ("BOTTLE_KEEPING", "0.995059"),
+    ("OUT_OF_SCOPE", "0.988387"),
+    ("OPENING_HOURS", "0.953418"),
 )
 
 
@@ -140,6 +156,23 @@ def _print_stdout(
     print(f"RAW_MACRO_F1={float(raw['macro_f1']):.6f}")
 
 
+def _determinism_evidence(train_records: list[dict]) -> str:
+    r1 = train(train_records)
+    r2 = train(train_records)
+    same_version = r1.model_version == r2.model_version
+    same_fp = r1.train_fingerprint == r2.train_fingerprint
+    from app.chat_training import prepare_text
+    prepared = [prepare_text(t) for t in PROBE_TEXTS]
+    p1 = r1.pipeline.predict_proba(prepared)
+    p2 = r2.pipeline.predict_proba(prepared)
+    same_proba = bool((p1 == p2).all())
+    return (
+        "Repeated training on train_v2 with fixed config produced identical "
+        f"model_version={same_version}, train_fingerprint={same_fp}, "
+        f"probe_probabilities_equal={same_proba}."
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m scripts.evaluate_chat_classifier",
@@ -148,22 +181,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
-        "--model-dir", default="models", help="Model artifact directory"
+        "--model-dir", default="models/chat_modelk", help="Model artifact directory"
     )
     parser.add_argument(
-        "--train", default="data/chat/train.jsonl", help="Train JSONL path"
+        "--train", default="data/chat/train_v2.jsonl", help="Train JSONL path"
     )
     parser.add_argument(
-        "--val", default="data/chat/val.jsonl", help="Validation JSONL path"
+        "--val", default="data/chat/val_accept_b2.jsonl", help="Validation JSONL path"
     )
     parser.add_argument(
         "--out-md",
-        default="reports/chat_classifier_b2_validation.md",
+        default="reports/chat_classifier_b2_modelk_validation.md",
         help="Output Markdown report path",
     )
     parser.add_argument(
         "--out-json",
-        default="reports/chat_classifier_b2_validation_metrics.json",
+        default="reports/chat_classifier_b2_modelk_validation_metrics.json",
         help="Output JSON metrics path",
     )
 
@@ -176,6 +209,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         train_records = load_dataset(args.train)
         val_records = load_dataset(args.val)
         model = load_model(args.model_dir)
+
+        actual_val_counts = Counter(r["intent"] for r in val_records)
+        if dict(actual_val_counts) != FROZEN_VAL_INTENT_COUNTS:
+            raise IdentityError(
+                "Identity mismatch for val per-intent counts: "
+                f"expected {FROZEN_VAL_INTENT_COUNTS!r}, got {dict(actual_val_counts)!r}"
+            )
 
         class_labels = model.meta.get("class_order")
         if not isinstance(class_labels, list):
@@ -224,6 +264,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         baselines = _baseline_raw(train_records, val_records)
         counts = _counts(train_records, val_records)
         status = "SUCCESS" if selection["selected"] is not None else "FAILURE"
+        det_ev = _determinism_evidence(train_records)
 
         report = build_json_report(
             model_version=model.model_version,
@@ -237,6 +278,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             feasible_count=selection["feasible_count"],
             best_achievable_oos_tp=selection["best_achievable_oos_tp"],
             exploratory_baselines=baselines,
+            highest_feasible_theta=selection.get("highest_feasible_theta"),
+            determinism_evidence=det_ev,
         )
         markdown = build_markdown_report(
             model_version=model.model_version,
@@ -250,6 +293,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             feasible_count=selection["feasible_count"],
             best_achievable_oos_tp=selection["best_achievable_oos_tp"],
             exploratory_baselines=baselines,
+            highest_feasible_theta=selection.get("highest_feasible_theta"),
+            determinism_evidence=det_ev,
         )
         write_reports(args.out_json, args.out_md, report, markdown)
         _print_stdout(model.model_version, selection["selected"], raw)

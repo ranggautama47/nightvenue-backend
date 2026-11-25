@@ -1,4 +1,4 @@
-﻿"""Validation evaluation and threshold selection for the chat intent classifier.
+"""Validation evaluation and threshold selection for the chat intent classifier.
 
 Pure logic for routing, metrics, threshold scanning, identity checks, and
 report rendering. No timestamps, no absolute paths, no randomness.
@@ -18,17 +18,31 @@ from app.chat_training import dataset_fingerprint
 ROUTES = ("LOCAL", "ADVANCED", "REFUSED")
 LOCAL_INTENT_SET = set(LOCAL_INTENTS)
 NONLOCAL_INTENTS = {"ADVANCED_CONVERSATION", "OUT_OF_SCOPE"}
+
+# Frozen Model K effective configuration (exact training config stored in meta).
 FROZEN_CONFIG = {
     "seed": 42,
-    "c_grid": [0.5, 1.0, 2.0, 5.0],
-    "cv_folds": 5,
-    "max_iter": 1000,
-    "analyzer": "char_wb",
-    "ngram_range": [2, 4],
+    "c": 10.0,
+    "max_iter": 3000,
     "solver": "lbfgs",
-    "scoring": "f1_macro",
+    "features": {
+        "char_wb": {
+            "analyzer": "char_wb",
+            "ngram_range": [2, 4],
+            "sublinear_tf": True,
+        },
+        "word": {
+            "analyzer": "word",
+            "ngram_range": [1, 2],
+            "sublinear_tf": True,
+            "token_pattern": r"(?u)\b\w+\b",
+        },
+    },
+    "class_weight": "(N/(K*count_c))**0.5",
+    "cv": "none",
+    "scoring": "fixed",
 }
-FROZEN_CV_BEST_PARAMS = {"clf__C": 5.0}
+FROZEN_CV_BEST_PARAMS = {"clf__C": 10.0}
 
 
 class IdentityError(RuntimeError):
@@ -180,6 +194,12 @@ def evaluate_routed(
     routed_local_total = 0
     local_route_hits = 0
     correct_local_count = 0
+    oos_to_advanced = 0
+    oos_to_local_intent = 0
+    non_oos_routed_advanced = 0
+    non_oos_routed_refused = 0
+    refused_total = 0
+    refused_true_oos = 0
 
     local_counts = {
         intent: {"tp": 0, "fp": 0, "support": 0} for intent in LOCAL_INTENTS
@@ -213,8 +233,24 @@ def evaluate_routed(
             elif predicted in LOCAL_INTENT_SET:
                 local_counts[predicted]["fp"] += 1
 
-        if actual == "OUT_OF_SCOPE" and route == "REFUSED":
-            oos_tp += 1
+        if route == "REFUSED":
+            refused_total += 1
+            if actual == "OUT_OF_SCOPE":
+                refused_true_oos += 1
+            else:
+                non_oos_routed_refused += 1
+
+        if route == "ADVANCED" and actual != "OUT_OF_SCOPE":
+            non_oos_routed_advanced += 1
+
+        if actual == "OUT_OF_SCOPE":
+            if route == "REFUSED":
+                oos_tp += 1
+            elif route == "ADVANCED":
+                oos_to_advanced += 1
+            elif route == "LOCAL":
+                oos_to_local_intent += 1
+
         if actual in NONLOCAL_INTENTS and route == "LOCAL":
             false_local_count += 1
 
@@ -237,11 +273,16 @@ def evaluate_routed(
         f1_sum.numerator, f1_sum.denominator * len(LOCAL_INTENTS)
     )
     oos_recall = frac(oos_tp, n_oos)
+    oos_precision = frac(refused_true_oos, refused_total)
     oos_feasible = oos_tp * 10 >= 9 * n_oos
     false_local_rate = frac(false_local_count, n_nonlocal)
     local_route_coverage = frac(local_route_hits, n_local)
     correct_local_coverage = frac(correct_local_count, n_local)
     local_route_precision = frac(correct_local_count, routed_local_total)
+    non_oos_count = len(true_intents) - n_oos
+    non_oos_advanced_share = frac(non_oos_routed_advanced, non_oos_count)
+    over_refusal_count = non_oos_routed_refused
+    over_refusal_rate = frac(over_refusal_count, non_oos_count)
 
     return {
         "theta": theta,
@@ -249,6 +290,7 @@ def evaluate_routed(
         "per_class_local": per_class_local,
         "oos_tp": oos_tp,
         "oos_recall": oos_recall,
+        "oos_precision": oos_precision,
         "oos_feasible": oos_feasible,
         "false_local_count": false_local_count,
         "false_local_rate": false_local_rate,
@@ -263,6 +305,13 @@ def evaluate_routed(
         "n_local": n_local,
         "n_nonlocal": n_nonlocal,
         "n_oos": n_oos,
+        "oos_to_advanced": oos_to_advanced,
+        "oos_to_local_intent": oos_to_local_intent,
+        "non_oos_routed_advanced": non_oos_routed_advanced,
+        "non_oos_advanced_share": non_oos_advanced_share,
+        "over_refusal_count": over_refusal_count,
+        "over_refusal_rate": over_refusal_rate,
+        "non_oos_count": non_oos_count,
     }
 
 
@@ -320,8 +369,10 @@ def select_threshold(
             feasible.append(routed)
 
     selected = None
+    highest_feasible_theta = None
     if feasible:
         selected = max(feasible, key=selection_key)
+        highest_feasible_theta = max(r["theta"] for r in feasible)
 
     return {
         "candidates": candidates,
@@ -329,6 +380,7 @@ def select_threshold(
         "feasible_count": len(feasible),
         "best_achievable_oos_tp": best_oos_tp,
         "selected": selected,
+        "highest_feasible_theta": highest_feasible_theta,
     }
 
 
@@ -474,6 +526,7 @@ def _routed_to_json(routed: dict[str, Any] | None) -> dict[str, Any] | None:
         "per_class_local": per_class_local,
         "oos_tp": routed["oos_tp"],
         "oos_recall": frac_to_json(routed["oos_recall"]),
+        "oos_precision": frac_to_json(routed["oos_precision"]),
         "oos_feasible": routed["oos_feasible"],
         "false_local_count": routed["false_local_count"],
         "false_local_rate": frac_to_json(routed["false_local_rate"]),
@@ -494,6 +547,15 @@ def _routed_to_json(routed: dict[str, Any] | None) -> dict[str, Any] | None:
         "n_local": routed["n_local"],
         "n_nonlocal": routed["n_nonlocal"],
         "n_oos": routed["n_oos"],
+        "oos_to_advanced": routed["oos_to_advanced"],
+        "oos_to_local_intent": routed["oos_to_local_intent"],
+        "non_oos_routed_advanced": routed["non_oos_routed_advanced"],
+        "non_oos_advanced_share": frac_to_json(
+            routed["non_oos_advanced_share"]
+        ),
+        "over_refusal_count": routed["over_refusal_count"],
+        "over_refusal_rate": frac_to_json(routed["over_refusal_rate"]),
+        "non_oos_count": routed["non_oos_count"],
     }
 
 
@@ -510,6 +572,8 @@ def build_json_report(
     feasible_count: int,
     best_achievable_oos_tp: int,
     exploratory_baselines: dict[str, Any],
+    highest_feasible_theta: float | None = None,
+    determinism_evidence: str | None = None,
 ) -> dict[str, Any]:
     """Build the JSON-serializable metrics report."""
     scan_json = []
@@ -524,6 +588,11 @@ def build_json_report(
                 "correct_local_count": entry["correct_local_count"],
             }
         )
+    selected_non_oos_advanced_share = None
+    if selected is not None:
+        selected_non_oos_advanced_share = frac_to_json(
+            selected["non_oos_advanced_share"]
+        )
     return {
         "model_version": model_version,
         "train_fingerprint": train_fingerprint,
@@ -536,6 +605,10 @@ def build_json_report(
         "status": status,
         "raw_11_class": _raw_to_json(raw),
         "selected_theta": None if selected is None else selected["theta"],
+        "highest_feasible_theta_in_declared_grid": highest_feasible_theta,
+        "selected_non_oos_routed_to_advanced_share": (
+            selected_non_oos_advanced_share
+        ),
         "routed_at_theta": _routed_to_json(selected),
         "threshold_scan": {
             "candidates": [entry["theta"] for entry in scan],
@@ -544,6 +617,7 @@ def build_json_report(
             "best_achievable_oos_tp": best_achievable_oos_tp,
         },
         "exploratory_baselines": exploratory_baselines,
+        "determinism_evidence": determinism_evidence,
     }
 
 
@@ -570,12 +644,6 @@ def _fmt_frac(value: Fraction) -> str:
     return f"{float(value):.6f}"
 
 
-def _fmt_maybe_frac(value: Any) -> str:
-    if value is None:
-        return "NONE"
-    return _fmt_frac(value)
-
-
 def _render_matrix(labels: Sequence[str], matrix: list[list[int]]) -> list[str]:
     header = "| actual \\ predicted | " + " | ".join(labels) + " |"
     sep = "| --- | " + " | ".join(["---:"] * len(labels)) + " |"
@@ -600,10 +668,12 @@ def build_markdown_report(
     feasible_count: int,
     best_achievable_oos_tp: int,
     exploratory_baselines: dict[str, Any],
+    highest_feasible_theta: float | None = None,
+    determinism_evidence: str | None = None,
 ) -> str:
     """Build the Markdown validation report."""
     lines: list[str] = []
-    lines.append("# Chat Classifier B2 Validation Evaluation")
+    lines.append("# Chat Classifier B2 Model K Validation Evaluation")
     lines.append("")
 
     lines.append("## 1. Summary")
@@ -621,11 +691,27 @@ def build_markdown_report(
             f"- OOS recall (routed): `{_fmt_frac(selected['oos_recall'])}`"
         )
         lines.append(
+            f"- OOS precision (routed): `{_fmt_frac(selected['oos_precision'])}`"
+        )
+        lines.append(
             f"- False-local rate: `{_fmt_frac(selected['false_local_rate'])}`"
         )
         lines.append(
             "- Correct local coverage: "
             f"`{_fmt_frac(selected['correct_local_coverage'])}`"
+        )
+    if highest_feasible_theta is None:
+        lines.append("- Highest feasible theta in declared grid: `NONE`")
+    else:
+        lines.append(
+            "- Highest feasible theta in declared grid: "
+            f"`{repr(float(highest_feasible_theta))}`"
+        )
+    if selected is not None:
+        lines.append(
+            "- Share of non-OOS validation routed to ADVANCED (LLM) at selected theta: "
+            f"`{_fmt_frac(selected['non_oos_advanced_share'])}` "
+            f"(`{selected['non_oos_routed_advanced']} / {selected['non_oos_count']}`)"
         )
     lines.append(f"- Raw 11-class accuracy: `{_fmt_frac(raw['accuracy'])}`")
     lines.append(f"- Raw 11-class macro-F1: `{_fmt_frac(raw['macro_f1'])}`")
@@ -637,18 +723,17 @@ def build_markdown_report(
         f"local={counts['local']}, "
         f"advanced={counts['advanced_conversation']}, oos={counts['oos']}"
     )
+    if determinism_evidence:
+        lines.append(f"- Determinism evidence: {determinism_evidence}")
     lines.append("")
 
     lines.append("## 2. Validation-selection caveat")
     lines.append(
-        "Theta was selected on the validation set. All validation metrics "
-        "at the selected theta are in-sample and are NOT a generalization "
-        "estimate. The only unbiased estimate will come from the heldout "
-        "set, authored after model and theta are frozen and approved."
-    )
-    lines.append(
-        "The CV macro-F1 0.777773 is train-only cross-validation, not a "
-        "validation result."
+        "Theta was selected on the validation set (`val_accept_b2.jsonl`). "
+        "All validation metrics at the selected theta are in-sample and are "
+        "NOT a generalization estimate. `val_accept_b2` is a validation set "
+        "(used for model comparison and theta selection), NOT an independent "
+        "blind test."
     )
     lines.append("")
 
@@ -672,6 +757,10 @@ def build_markdown_report(
     lines.append(
         "- Feasibility rule: `oos_feasible = (oos_tp * 10 >= 9 * N_oos)` "
         "(integer arithmetic)."
+    )
+    lines.append(
+        "- Over-refusal rate (non-OOS routed to REFUSED) is a reporting "
+        "guard only, not a gate."
     )
     lines.append("")
 
@@ -733,6 +822,18 @@ def build_markdown_report(
             f"- `oos_tp / N_oos`: `{selected['oos_tp']} / {selected['n_oos']}`"
         )
         lines.append(f"- OOS recall: `{_fmt_frac(selected['oos_recall'])}`")
+        lines.append(f"- OOS precision: `{_fmt_frac(selected['oos_precision'])}`")
+        lines.append(
+            "- Over-refusal (non-OOS routed REFUSED): "
+            f"`{selected['over_refusal_count']}` / `{selected['non_oos_count']}` "
+            f"(`{_fmt_frac(selected['over_refusal_rate'])}`, 5% guard only)"
+        )
+        lines.append(
+            f"- OOS -> ADVANCED: `{selected['oos_to_advanced']}`"
+        )
+        lines.append(
+            f"- OOS -> local-intent (LOCAL): `{selected['oos_to_local_intent']}`"
+        )
         lines.append(
             "- `false_local_count / N_nonlocal`: "
             f"`{selected['false_local_count']} / {selected['n_nonlocal']}`"
@@ -776,6 +877,13 @@ def build_markdown_report(
     lines.append("## 8. Threshold scan summary")
     lines.append(f"- Candidate count: `{len(scan)}`")
     lines.append(f"- Feasible count: `{feasible_count}`")
+    if highest_feasible_theta is None:
+        lines.append("- Highest feasible theta in declared grid: `NONE`")
+    else:
+        lines.append(
+            "- Highest feasible theta in declared grid: "
+            f"`{repr(float(highest_feasible_theta))}`"
+        )
     lines.append(
         "- Best achievable OOS true positives: "
         f"`{best_achievable_oos_tp}`"

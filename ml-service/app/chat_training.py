@@ -1,8 +1,8 @@
 """Chat intent classifier training pipeline.
 
-This module provides the training pipeline for the character-level TF-IDF +
-Logistic Regression classifier. It includes dataset loading, fingerprinting,
-training with cross-validation, artifact saving/loading, and prediction.
+This module provides the training pipeline for the fixed Model K chat intent
+classifier: FeatureUnion(TF-IDF char_wb 2-4 + TF-IDF word 1-2) with
+LogisticRegression. No cross-validation or hyperparameter search is used.
 
 SECURITY NOTE: Only load artifacts you built yourself. joblib/pickle is not
 safe for untrusted files.
@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,7 +26,7 @@ import sklearn
 import threadpoolctl
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.pipeline import FeatureUnion, Pipeline
 from threadpoolctl import threadpool_limits
 
 from app.chat_text import (
@@ -174,12 +175,42 @@ def build_char_vectorizer() -> TfidfVectorizer:
     """Create a new character-level TF-IDF vectorizer.
 
     The text passed to it must ALWAYS be normalize_for_model(text) first.
+    Kept compatible for leakage/near-duplicate checks.
     """
     return TfidfVectorizer(
         analyzer="char_wb",
         ngram_range=(2, 4),
         lowercase=False,
     )
+
+
+def _build_char_vectorizer_modelk() -> TfidfVectorizer:
+    return TfidfVectorizer(
+        analyzer="char_wb",
+        ngram_range=(2, 4),
+        sublinear_tf=True,
+        lowercase=True,
+    )
+
+
+def _build_word_vectorizer_modelk() -> TfidfVectorizer:
+    return TfidfVectorizer(
+        analyzer="word",
+        ngram_range=(1, 2),
+        sublinear_tf=True,
+        token_pattern=r"(?u)\b\w+\b",
+        lowercase=True,
+    )
+
+
+def _compute_class_weights(labels: Sequence[str]) -> dict[str, float]:
+    counts = Counter(labels)
+    n = len(labels)
+    k = len(INTENTS)
+    return {
+        intent: (n / (k * counts[intent])) ** 0.5
+        for intent in INTENTS
+    }
 
 
 def prepare_text(text: str) -> str:
@@ -189,24 +220,35 @@ def prepare_text(text: str) -> str:
 
 @dataclass(frozen=True)
 class TrainConfig:
-    """Training configuration."""
+    """Fixed Model K training configuration (no grid search, no CV)."""
 
     seed: int = 42
-    c_grid: tuple[float, ...] = (0.5, 1.0, 2.0, 5.0)
-    cv_folds: int = 5
-    max_iter: int = 1000
+    c: float = 10.0
+    max_iter: int = 3000
 
     def config_dict(self) -> dict:
-        """Return JSON-serializable config dict with extra metadata."""
+        """Return JSON-serializable config dict describing exact Model K config."""
         return {
             "seed": self.seed,
-            "c_grid": list(self.c_grid),
-            "cv_folds": self.cv_folds,
+            "c": self.c,
             "max_iter": self.max_iter,
-            "analyzer": "char_wb",
-            "ngram_range": [2, 4],
             "solver": "lbfgs",
-            "scoring": "f1_macro",
+            "features": {
+                "char_wb": {
+                    "analyzer": "char_wb",
+                    "ngram_range": [2, 4],
+                    "sublinear_tf": True,
+                },
+                "word": {
+                    "analyzer": "word",
+                    "ngram_range": [1, 2],
+                    "sublinear_tf": True,
+                    "token_pattern": r"(?u)\b\w+\b",
+                },
+            },
+            "class_weight": "(N/(K*count_c))**0.5",
+            "cv": "none",
+            "scoring": "fixed",
         }
 
 
@@ -215,13 +257,18 @@ DEFAULT_CONFIG = TrainConfig()
 
 @dataclass(frozen=True)
 class TrainResult:
-    """Result of training."""
+    """Result of training.
+
+    cv_best_params and cv_best_score are retained for API compatibility but are
+    fixed values (no cross-validation or hyperparameter search is performed):
+    cv_best_params is fixed to {"clf__C": 10.0} and cv_best_score is None.
+    """
 
     pipeline: object
     model_version: str
     train_fingerprint: str
     cv_best_params: dict
-    cv_best_score: float
+    cv_best_score: float | None
     config: TrainConfig
 
 
@@ -231,17 +278,17 @@ def compute_model_version(train_records: Sequence[dict], config: TrainConfig) ->
     config_json = json.dumps(config.config_dict(), sort_keys=True, separators=(",", ":"))
     combined = train_fp + "\n" + config_json
     hash_suffix = hashlib.sha256(combined.encode("utf-8")).hexdigest()[:16]
-    return f"chat-charwb-lr-{hash_suffix}"
+    return f"chat-modelk-lr-{hash_suffix}"
 
 
 def train(
     train_records: Sequence[dict],
     config: TrainConfig = DEFAULT_CONFIG,
 ) -> TrainResult:
-    """Train the chat intent classifier.
+    """Train the chat intent classifier (Model K, fixed configuration).
 
     Does NOT accept validation data. Validation is never used to fit, tune,
-    or select the model.
+    or select the model. No GridSearchCV is performed.
 
     Args:
         train_records: Training records from load_dataset.
@@ -251,60 +298,46 @@ def train(
         TrainResult with fitted pipeline and metadata.
 
     Raises:
-        DatasetError: If any intent has fewer records than cv_folds.
+        DatasetError: If any intent has no records.
     """
-    # Check each intent has at least cv_folds records
-    from collections import Counter
-
     intent_counts = Counter(r["intent"] for r in train_records)
     for intent in INTENTS:
-        if intent_counts.get(intent, 0) < config.cv_folds:
+        if intent_counts.get(intent, 0) < 1:
             raise DatasetError(
                 f"Intent {intent} has {intent_counts.get(intent, 0)} records, "
-                f"need at least {config.cv_folds} for cross-validation"
+                "need at least 1"
             )
 
     texts = [prepare_text(r["text"]) for r in train_records]
     labels = [r["intent"] for r in train_records]
+    class_weight = _compute_class_weights(labels)
 
-    pipeline = sklearn.pipeline.Pipeline([
-        ("tfidf", build_char_vectorizer()),
+    pipeline = Pipeline([
+        ("f", FeatureUnion([
+            ("c", _build_char_vectorizer_modelk()),
+            ("w", _build_word_vectorizer_modelk()),
+        ])),
         ("clf", LogisticRegression(
-            solver="lbfgs",
+            C=config.c,
             max_iter=config.max_iter,
+            solver="lbfgs",
+            class_weight=class_weight,
             random_state=config.seed,
         )),
     ])
 
-    param_grid = {"clf__C": list(config.c_grid)}
-    cv = StratifiedKFold(
-        n_splits=config.cv_folds,
-        shuffle=True,
-        random_state=config.seed,
-    )
-
-    grid_search = GridSearchCV(
-        pipeline,
-        param_grid,
-        scoring="f1_macro",
-        cv=cv,
-        n_jobs=1,
-        refit=True,
-    )
-
     with threadpool_limits(limits=1):
-        grid_search.fit(texts, labels)
+        pipeline.fit(texts, labels)
 
-    best_pipeline = grid_search.best_estimator_
     model_version = compute_model_version(train_records, config)
     train_fp = dataset_fingerprint(train_records)
 
     return TrainResult(
-        pipeline=best_pipeline,
+        pipeline=pipeline,
         model_version=model_version,
         train_fingerprint=train_fp,
-        cv_best_params=dict(grid_search.best_params_),
-        cv_best_score=float(grid_search.best_score_),
+        cv_best_params={"clf__C": 10.0},
+        cv_best_score=None,
         config=config,
     )
 
