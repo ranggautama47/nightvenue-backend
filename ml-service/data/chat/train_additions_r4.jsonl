@@ -1,0 +1,60 @@
+{"id":"tr-0828","text":"Di klub sebelah, area mana yang lebih enak buat duduk santai?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0829","text":"Kalau mau pesan minuman di bar kota lain, yang paling recommended apa ya?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0830","text":"Untuk acara malam ini, budget di hotel dekat stasiun biasanya berapa?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0831","text":"Lebih baik pilih restoran tetangga atau tempat makan lain untuk makan malam rame-rame?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0832","text":"Area outdoor enak nggak kalau aku nongkrong di kafe seberang jalan sana?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0833","text":"Mau rencanain malam di tempat hiburan lain di Bandung, minuman apa yang wajib dicoba?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0834","text":"Which area is better for a group at that downtown hotel bar?","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0835","text":"What should I order when visiting a lounge across town tonight?","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0836","text":"How much should I budget for drinks at a restaurant in another city?","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0837","text":"Di club next door, better pilih sofa area atau standing spot?","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
+{"id":"tr-0838","text":"Kalau ke bar lain di pusat kota, what drinks should I try first?","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
+{"id":"tr-0839","text":"Planning hangout di rooftop cafe tempat lain, kira-kira budget-nya berapa?","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
+{"id":"tr-0840","text":"Air itu apa?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0841","text":"Cara bikin es teh manis di rumah gimana langkahnya?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0842","text":"Why sleep matters?","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0843","text":"Gimana cara mix mocktail sederhana at home tanpa alat ribet?","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
+{"id":"tr-0844","text":"Vitamin C benefits apa?","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
+{"id":"tr-0845","text":"Batalkan pesanan meja.","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0846","text":"Ubah pesanan saya.","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0847","text":"Cancel my order.","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0848","text":"Di tempat ini, area mana yang lebih enak buat duduk santai?","intent":"ADVANCED_CONVERSATION","lang":"id","source":"synthetic"}
+{"id":"tr-0849","text":"Kalau mau pesan minuman di sini, yang paling recommended apa ya?","intent":"ADVANCED_CONVERSATION","lang":"id","source":"synthetic"}
+{"id":"tr-0850","text":"Untuk acara malam ini di venue ini, pilihan area dan menu apa yang pas biar nyaman?","intent":"ADVANCED_CONVERSATION","lang":"id","source":"synthetic"}
+{"id":"tr-0851","text":"Lebih baik pilih area indoor atau outdoor di sini untuk ngobrol rame-rame?","intent":"ADVANCED_CONVERSATION","lang":"id","source":"synthetic"}
+{"id":"tr-0852","text":"Which area is better for a group at this venue tonight?","intent":"ADVANCED_CONVERSATION","lang":"en","source":"synthetic"}
+{"id":"tr-0853","text":"What should I order here if I want something light and easy to share?","intent":"ADVANCED_CONVERSATION","lang":"en","source":"synthetic"}
+{"id":"tr-0854","text":"Di tempat ini, better pilih sofa area atau dekat bar buat suasana chill?","intent":"ADVANCED_CONVERSATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0855","text":"Kalau hangout di sini malam ini, what drinks and spot would you suggest?","intent":"ADVANCED_CONVERSATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0856","text":"Ada mocktail?","intent":"MENU_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0857","text":"Menu makanan ringan apa saja yang tersedia di sini?","intent":"MENU_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0858","text":"Minuman bersoda apa yang ada di daftar menu?","intent":"MENU_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0859","text":"Any snacks?","intent":"MENU_INFORMATION","lang":"en","source":"synthetic"}
+{"id":"tr-0860","text":"What non-alcoholic drinks are listed on your menu?","intent":"MENU_INFORMATION","lang":"en","source":"synthetic"}
+{"id":"tr-0861","text":"Signature cocktail-nya apa aja?","intent":"MENU_INFORMATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0862","text":"Usia minimum?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0863","text":"Pembayaran bisa pakai kartu debit atau tunai?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0864","text":"Aturan berpakaian tamu di sini seperti apa?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0865","text":"Perlu bawa identitas saat masuk tidak?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0866","text":"Cash only?","intent":"GENERAL_VENUE_INFORMATION","lang":"en","source":"synthetic"}
+{"id":"tr-0867","text":"Is there a dress code for guests at this venue?","intent":"GENERAL_VENUE_INFORMATION","lang":"en","source":"synthetic"}
+{"id":"tr-0868","text":"Wi-Fi ada?","intent":"GENERAL_VENUE_INFORMATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0869","text":"Perlu show ID card waktu masuk?","intent":"GENERAL_VENUE_INFORMATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0870","text":"Buka jam berapa?","intent":"OPENING_HOURS","lang":"id","source":"synthetic"}
+{"id":"tr-0871","text":"Tutup jam berapa malam ini?","intent":"OPENING_HOURS","lang":"id","source":"synthetic"}
+{"id":"tr-0872","text":"Hari apa saja tempat ini beroperasi untuk tamu?","intent":"OPENING_HOURS","lang":"id","source":"synthetic"}
+{"id":"tr-0873","text":"Open today?","intent":"OPENING_HOURS","lang":"en","source":"synthetic"}
+{"id":"tr-0874","text":"What time do you close on weekdays?","intent":"OPENING_HOURS","lang":"en","source":"synthetic"}
+{"id":"tr-0875","text":"Sekarang lagi open?","intent":"OPENING_HOURS","lang":"mixed","source":"synthetic"}
+{"id":"tr-0876","text":"Bisa booking?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0877","text":"Perlu DP untuk pesan meja di sini?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0878","text":"Kalau batal, aturannya bagaimana untuk tamu?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0879","text":"Walk-ins allowed?","intent":"RESERVATION","lang":"en","source":"synthetic"}
+{"id":"tr-0880","text":"How far ahead should I arrange a table request?","intent":"RESERVATION","lang":"en","source":"synthetic"}
+{"id":"tr-0881","text":"Perlu booking dulu nggak?","intent":"RESERVATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0882","text":"Lounge di mana?","intent":"VENUE_AREA","lang":"id","source":"synthetic"}
+{"id":"tr-0883","text":"Area merokoknya ada di bagian mana venue ini?","intent":"VENUE_AREA","lang":"id","source":"synthetic"}
+{"id":"tr-0884","text":"Where is the bar?","intent":"VENUE_AREA","lang":"en","source":"synthetic"}
+{"id":"tr-0885","text":"Dance floor-nya sebelah mana?","intent":"VENUE_AREA","lang":"mixed","source":"synthetic"}
+{"id":"tr-0886","text":"Ada promo?","intent":"PROMOTION","lang":"id","source":"synthetic"}
+{"id":"tr-0887","text":"Malam ini ada special deals?","intent":"PROMOTION","lang":"mixed","source":"synthetic"}

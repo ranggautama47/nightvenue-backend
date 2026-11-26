@@ -1,0 +1,36 @@
+{"id":"tr-0720","text":"Mohon batalkan reservasi saya.","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0721","text":"Kirim email konfirmasi sekarang.","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0722","text":"Bisa ubah reservasi ke jam 5 sore untuk 2 orang atas nama Rani?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0723","text":"Tolong bayar deposit sekarang.","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0724","text":"Tahan reservasi ini.","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0725","text":"Please cancel my reservation.","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0726","text":"Could you email my confirmation for Arman at 7 p.m. for two guests?","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0727","text":"Please change my reservation.","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0728","text":"I want to pay a deposit now for Mira at 9 p.m. for three people.","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0729","text":"Can you book tempat ini sekarang?","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
+{"id":"tr-0730","text":"Tolong kirim confirmation email?","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
+{"id":"tr-0731","text":"Tolong hold reservasi untuk Danu jam 8 malam, 4 orang.","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
+{"id":"tr-0732","text":"Bar sebelah lebih seru nggak?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0733","text":"Kalau mau lanjut ke klub pesaing di dekat sini, transportasi paling praktis apa?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0734","text":"Hotel mana yang nyaman untuk menginap setelah dari tempat hiburan lain malam ini?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0735","text":"Bagaimana cara memilih pakaian yang aman untuk pergi ke kehidupan malam di kota besar?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0736","text":"Tips agar tidak mabuk saat minum di acara pesta pada umumnya apa saja?","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0737","text":"Is that competitor lounge cheaper than places around here?","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0738","text":"Which hotel near another nightlife spot has the easiest late checkout?","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0739","text":"How do I get from downtown to a different club by taxi at midnight?","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0740","text":"What are some general tips for staying safe when going out at night?","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0741","text":"Venue sebelah ada live music malam ini?","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
+{"id":"tr-0742","text":"Mending ke hotel mana after party di luar venue ini?","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
+{"id":"tr-0743","text":"Any tips buat first time clubbing di tempat lain, biar nggak awkward?","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
+{"id":"tr-0744","text":"Deposit wajib?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0745","text":"Bagaimana aturan pembatalan reservasi jika tamu tidak bisa datang sesuai rencana?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0746","text":"Berapa lama waktu tunggu konfirmasi setelah permintaan tempat diajukan?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0747","text":"What is the lead time for arranging a reservation in advance?","intent":"RESERVATION","lang":"en","source":"synthetic"}
+{"id":"tr-0748","text":"How does the reservation confirmation process work, and when is it usually completed?","intent":"RESERVATION","lang":"en","source":"synthetic"}
+{"id":"tr-0749","text":"Deposit policy untuk reservasi di sini seperti apa?","intent":"RESERVATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0750","text":"Area mana enak?","intent":"ADVANCED_CONVERSATION","lang":"id","source":"synthetic"}
+{"id":"tr-0751","text":"Kalau datang ke sini malam ini, lebih pas pilih area indoor atau rooftop untuk suasana santai?","intent":"ADVANCED_CONVERSATION","lang":"id","source":"synthetic"}
+{"id":"tr-0752","text":"Untuk kunjungan pertama di tempat ini, menu minuman apa yang sebaiknya dicoba dan kapan waktu datang yang nyaman?","intent":"ADVANCED_CONVERSATION","lang":"id","source":"synthetic"}
+{"id":"tr-0753","text":"Which seating area here is better for a quiet chat, the lounge or the bar side?","intent":"ADVANCED_CONVERSATION","lang":"en","source":"synthetic"}
+{"id":"tr-0754","text":"If I come to this venue for a celebration, what area and current promotion would you recommend?","intent":"ADVANCED_CONVERSATION","lang":"en","source":"synthetic"}
+{"id":"tr-0755","text":"Mending duduk di indoor area sini atau dekat panggung, buat ngobrol lebih nyaman?","intent":"ADVANCED_CONVERSATION","lang":"mixed","source":"synthetic"}

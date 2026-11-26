@@ -1,0 +1,72 @@
+{"id":"tr-0756","text":"Tersedia layanan booking?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0757","text":"Boleh tahu aturan DP-nya?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0758","text":"Walk-in saja cukup?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0759","text":"Kalau rombongan besar, ada ketentuan khusus untuk pesan meja di sini?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0760","text":"Tolong info, apakah tamu bisa datang langsung tanpa booking pada malam biasa atau sebaiknya mengatur tempat lebih dulu dari rumah?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0761","text":"Mohon info batas waktu pembatalan jika rencana kunjungan batal mendadak, agar tamu tahu aturannya tanpa perlu mengubah apa pun saat ini.","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0762","text":"Butuh konfirmasi dulu?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0763","text":"Biasanya tamu disarankan pesan tempat berapa lama sebelum hari kunjungan, terutama jika datang pada akhir pekan yang ramai sekali?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0764","text":"Apakah uang muka diperlukan saat ingin mengamankan meja, atau biaya tersebut bisa dibayarkan langsung di tempat pada saat kedatangan tamu?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0765","text":"Boleh info proses konfirmasi setelah tamu mengajukan permintaan tempat, biasanya melalui langkah apa dan berapa lama menunggu kabarnya?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0766","text":"Untuk kunjungan rombongan besar, apa saja aturan yang perlu diketahui sebelum memesan area duduk di venue ini?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0767","text":"Apakah tempat ini menerima tamu yang datang tanpa janji lebih dulu pada malam biasa?","intent":"RESERVATION","lang":"id","source":"synthetic"}
+{"id":"tr-0768","text":"Is a booking needed?","intent":"RESERVATION","lang":"en","source":"synthetic"}
+{"id":"tr-0769","text":"Could you let me know the deposit rules before guests reserve a table at this venue?","intent":"RESERVATION","lang":"en","source":"synthetic"}
+{"id":"tr-0770","text":"Please tell me how far in advance a table request should be made for a weekend visit.","intent":"RESERVATION","lang":"en","source":"synthetic"}
+{"id":"tr-0771","text":"What is the cancellation policy for a held table if plans change later on?","intent":"RESERVATION","lang":"en","source":"synthetic"}
+{"id":"tr-0772","text":"Can you let me know whether walk-in guests are usually accepted, or if arranging a spot ahead of time is recommended here?","intent":"RESERVATION","lang":"en","source":"synthetic"}
+{"id":"tr-0773","text":"For larger groups visiting together, are there special conditions to be aware of when planning a table request at this place?","intent":"RESERVATION","lang":"en","source":"synthetic"}
+{"id":"tr-0774","text":"Booking di sini possible nggak?","intent":"RESERVATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0775","text":"Boleh tahu deposit policy-nya untuk pesan meja, sekadar info saja tanpa ada proses apa pun?","intent":"RESERVATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0776","text":"Kalau plan berubah, cancellation rules-nya gimana?","intent":"RESERVATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0777","text":"Tolong info lead time yang ideal sebelum visit, supaya arrangement tempatnya lebih aman untuk rombongan kecil.","intent":"RESERVATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0778","text":"Gimana confirmation process setelah request meja masuk, dan apakah guest perlu follow up lagi setelahnya?","intent":"RESERVATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0779","text":"Untuk group besar, mending walk-in atau atur booking dulu? Boleh kasih info soal aturannya yang berlaku di sini.","intent":"RESERVATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0780","text":"Mulai operasional jam berapa?","intent":"OPENING_HOURS","lang":"id","source":"synthetic"}
+{"id":"tr-0781","text":"Biasanya tempat ini tutup pukul berapa pada malam akhir pekan?","intent":"OPENING_HOURS","lang":"id","source":"synthetic"}
+{"id":"tr-0782","text":"Setiap hari buka untuk tamu umum atau ada hari libur operasional?","intent":"OPENING_HOURS","lang":"id","source":"synthetic"}
+{"id":"tr-0783","text":"When do you usually open on Fridays?","intent":"OPENING_HOURS","lang":"en","source":"synthetic"}
+{"id":"tr-0784","text":"What time does this place close on Saturday nights?","intent":"OPENING_HOURS","lang":"en","source":"synthetic"}
+{"id":"tr-0785","text":"Hari ini open sampai jam berapa?","intent":"OPENING_HOURS","lang":"mixed","source":"synthetic"}
+{"id":"tr-0786","text":"Di mana letak area lounge di dalam venue?","intent":"VENUE_AREA","lang":"id","source":"synthetic"}
+{"id":"tr-0787","text":"Apakah ada sofa khusus untuk tamu di area indoor?","intent":"VENUE_AREA","lang":"id","source":"synthetic"}
+{"id":"tr-0788","text":"Meja bar utamanya berada dekat bagian mana dari ruangan?","intent":"VENUE_AREA","lang":"id","source":"synthetic"}
+{"id":"tr-0789","text":"Ruang khusus perokok tersedia di sisi mana, kalau ada?","intent":"VENUE_AREA","lang":"id","source":"synthetic"}
+{"id":"tr-0790","text":"Where is the outdoor seating area located inside this place?","intent":"VENUE_AREA","lang":"en","source":"synthetic"}
+{"id":"tr-0791","text":"Is there a dance floor, and which side of the venue is it on?","intent":"VENUE_AREA","lang":"en","source":"synthetic"}
+{"id":"tr-0792","text":"VIP area-nya posisinya di mana ya?","intent":"VENUE_AREA","lang":"mixed","source":"synthetic"}
+{"id":"tr-0793","text":"Kalau dari entrance, toilet terdekat arahnya ke mana?","intent":"VENUE_AREA","lang":"mixed","source":"synthetic"}
+{"id":"tr-0794","text":"Ada pilihan makanan ringan apa saja di daftar menu?","intent":"MENU_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0795","text":"Minuman non-alkohol apa yang tersedia untuk tamu?","intent":"MENU_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0796","text":"Apakah menu di sini menyediakan hidangan untuk berbagi?","intent":"MENU_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0797","text":"Varian mocktail apa saja yang tercantum saat ini?","intent":"MENU_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0798","text":"Which signature cocktails are available on the menu?","intent":"MENU_INFORMATION","lang":"en","source":"synthetic"}
+{"id":"tr-0799","text":"Do you have any snack options listed for guests to order?","intent":"MENU_INFORMATION","lang":"en","source":"synthetic"}
+{"id":"tr-0800","text":"Ada bottled drinks apa aja di menu kalian?","intent":"MENU_INFORMATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0801","text":"Untuk non-alcoholic options, apa yang paling menarik dari daftar menu?","intent":"MENU_INFORMATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0802","text":"Apakah ada batas usia minimum untuk masuk?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0803","text":"Metode bayar apa saja yang diterima di sini, tunai atau non-tunai?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0804","text":"Bagaimana aturan busana yang berlaku untuk tamu yang datang?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0805","text":"Apakah tamu wajib membawa kartu identitas saat berkunjung?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0806","text":"Fasilitas Wi-Fi untuk pengunjung tersedia tidak?","intent":"GENERAL_VENUE_INFORMATION","lang":"id","source":"synthetic"}
+{"id":"tr-0807","text":"What payment methods are accepted at the entrance or cashier?","intent":"GENERAL_VENUE_INFORMATION","lang":"en","source":"synthetic"}
+{"id":"tr-0808","text":"Is there a minimum age requirement for guests who want to enter?","intent":"GENERAL_VENUE_INFORMATION","lang":"en","source":"synthetic"}
+{"id":"tr-0809","text":"Dress code-nya santai boleh atau harus rapi?","intent":"GENERAL_VENUE_INFORMATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0810","text":"Untuk akses masuk, ID card wajib dibawa nggak?","intent":"GENERAL_VENUE_INFORMATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0811","text":"Venue ini punya akses ramah difabel, misalnya jalur kursi roda?","intent":"GENERAL_VENUE_INFORMATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0812","text":"Ada promo minuman yang sedang berjalan hari ini?","intent":"PROMOTION","lang":"id","source":"synthetic"}
+{"id":"tr-0813","text":"Apakah tersedia penawaran khusus untuk kunjungan malam ini?","intent":"PROMOTION","lang":"id","source":"synthetic"}
+{"id":"tr-0814","text":"Are there any current deals on drinks or packages right now?","intent":"PROMOTION","lang":"en","source":"synthetic"}
+{"id":"tr-0815","text":"Malam ini ada happy hour promo nggak?","intent":"PROMOTION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0816","text":"Lebih enak duduk di area lounge atau dekat lantai dansa kalau mau suasana ramai tapi tetap nyaman ngobrol di tempat ini?","intent":"ADVANCED_CONVERSATION","lang":"id","source":"synthetic"}
+{"id":"tr-0817","text":"Kalau datang ke venue ini untuk pertama kali, kombinasi area dan pilihan menu apa yang paling pas buat suasana santai?","intent":"ADVANCED_CONVERSATION","lang":"id","source":"synthetic"}
+{"id":"tr-0818","text":"For a small group visiting this place tonight, which area and drink choice would balance comfort and a lively mood?","intent":"ADVANCED_CONVERSATION","lang":"en","source":"synthetic"}
+{"id":"tr-0819","text":"Di venue ini, better pilih indoor seating atau outdoor area kalau mau menikmati menu ringan sambil ngobrol lama?","intent":"ADVANCED_CONVERSATION","lang":"mixed","source":"synthetic"}
+{"id":"tr-0820","text":"Pesankan meja untuk Raka jam 9 malam, 4 orang.","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0821","text":"Saya mau DP meja untuk Tia pukul 20.00, 2 orang.","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0822","text":"Tolong amankan meja untuk Bima besok malam, 6 orang.","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0823","text":"Ganti booking meja saya jadi atas nama Seno jam 7 malam, 3 tamu.","intent":"OUT_OF_SCOPE","lang":"id","source":"synthetic"}
+{"id":"tr-0824","text":"Please book a table for Lina at 8 p.m. for five people.","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0825","text":"I want to reserve a table for Omar tonight at 10 p.m. for two guests.","intent":"OUT_OF_SCOPE","lang":"en","source":"synthetic"}
+{"id":"tr-0826","text":"Hold meja untuk Nia jam 9 malam, 4 orang.","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}
+{"id":"tr-0827","text":"Cancel booking saya atas nama Rudi jam 8 malam, 2 orang.","intent":"OUT_OF_SCOPE","lang":"mixed","source":"synthetic"}

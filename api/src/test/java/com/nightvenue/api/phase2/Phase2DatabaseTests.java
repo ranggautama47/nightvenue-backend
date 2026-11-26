@@ -59,6 +59,9 @@ class Phase2DatabaseTests {
         expected.add("bottle_vaults");
         expected.add("bottle_vault_transactions");
         expected.add("stock_forecasts");
+        expected.add("venue_faqs");
+        expected.add("promotions");
+        expected.add("chat_route_logs");
         List<String> actual = jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name", String.class);
         assertEquals(expected.stream().sorted().toList(), actual);
     }
@@ -92,7 +95,10 @@ class Phase2DatabaseTests {
                 Map.entry("bottle_vault_transactions.performed_by", "r"),
                 Map.entry("stock_forecasts.venue_id", "r"),
                 Map.entry("stock_forecasts.ingredient_id", "r"),
-                Map.entry("stock_forecasts.requested_by", "r"));
+                Map.entry("stock_forecasts.requested_by", "r"),
+                Map.entry("venue_faqs.venue_id", "c"),
+                Map.entry("promotions.venue_id", "c"),
+                Map.entry("chat_route_logs.venue_id", "n"));
         Map<String, String> actual = new LinkedHashMap<>();
         jdbc.query("""
                 SELECT child.relname || '.' || child_col.attname AS fk_column, c.confdeltype::text AS delete_action
