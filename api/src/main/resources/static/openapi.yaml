@@ -88,6 +88,29 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/RateLimited" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /chat:
+    post:
+      summary: Ask a venue-scoped hybrid chat question
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChatRequest" }
+      responses:
+        "200":
+          description: Chat answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChatResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Validation failed (invalid venueId or message)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /shifts:
     post:
       summary: Open the caller's own cashier shift for a venue
@@ -1061,6 +1084,26 @@ components:
          format: date
          description: Last completed business day in the input series.
        generatedAt: { type: string, format: date-time }
+    ChatRequest:
+      type: object
+      required: [venueId, message]
+      properties:
+        venueId: { type: integer, format: int64, minimum: 1 }
+        message:
+          type: string
+          description: 1 to 500 Unicode code points after trimming
+    ChatResponse:
+      type: object
+      required: [answer, route]
+      properties:
+        answer: { type: string }
+        route:
+          type: string
+          enum: [LOCAL, FALLBACK, REFUSED, ADVANCED_AI_REQUIRED]
+          description: Routing outcome; LLM is reserved for a later phase and is never returned now.
+        intent: { type: [string, "null"] }
+        confidence: { type: [number, "null"] }
+        modelVersion: { type: [string, "null"] }
   responses:
     BadRequest:
       description: Invalid JSON, missing field, or password over 72 UTF-8 bytes
