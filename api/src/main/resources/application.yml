@@ -27,6 +27,11 @@ nightvenue:
     service-url: ${ML_SERVICE_URL:}
     internal-token: ${ML_INTERNAL_TOKEN:}
     forecast-timeout-ms: ${ML_FORECAST_TIMEOUT_MS:10000}
+  chat:
+    classify-timeout-ms: ${ML_CLASSIFY_TIMEOUT_MS:2000}
+    # PENDING PM: canonical theta (ADR-024). Value from the Python 3.12.9 Model K build.
+    confidence-threshold: ${CHAT_CONFIDENCE_THRESHOLD:0.2663504950761663}
+    rate-limit-per-min: ${CHAT_RATE_LIMIT_PER_MIN:10}
   shift:
     cutoff:
       enabled: ${NIGHTVENUE_SHIFT_CUTOFF_ENABLED:false}

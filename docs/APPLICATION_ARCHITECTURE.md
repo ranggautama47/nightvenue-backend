@@ -16,7 +16,7 @@ flowchart TB
 
     subgraph BE["nightvenue-backend (Docker Compose)"]
         API["Spring Boot API<br/>system of record"]
-        ML["FastAPI ML service<br/>forecasting; intent classifier rencana Phase 10, belum diimplementasikan"]
+        ML["FastAPI ML service<br/>forecasting; intent classifier chat (Phase 10.2)"]
         PG[("PostgreSQL")]
         RD[("Redis")]
     end
@@ -35,8 +35,8 @@ flowchart TB
 
 | Komponen | Boleh | Tidak boleh |
 |---|---|---|
-| Spring Boot | Semua logika bisnis, auth, uang, stok, status, BusinessDateService; routing chat rencana Phase 10, belum diimplementasikan | — |
-| FastAPI | Perhitungan forecast dari deret numerik; klasifikasi intent FR-ML-01/02 rencana Phase 10, belum diimplementasikan | Akses DB, auth, checkout, payment, mutasi inventory/bottle, aturan transaksional |
+| Spring Boot | Semua logika bisnis, auth, uang, stok, status, BusinessDateService; routing chat (Phase 10.3; BYOK LLM menyusul di 10.4) | — |
+| FastAPI | Perhitungan forecast dari deret numerik; klasifikasi intent FR-ML-01/02 (Phase 10.2) | Akses DB, auth, checkout, payment, mutasi inventory/bottle, aturan transaksional |
 | PostgreSQL | Sumber kebenaran | — |
 | Redis | Cache menu, rate limit, refresh token | State bisnis utama |
 | Frontend | Presentasi, validasi UX | Menjadi batas keamanan |
@@ -137,8 +137,8 @@ DTO in/out (validasi)                                   JdbcTemplate
 | Bottle | `POST /api/v1/bottles` (deposit, `Idempotency-Key`, roles ADMIN/MANAGER/CASHIER), `POST /api/v1/bottles/redeem` (roles ADMIN/MANAGER/CASHIER), `GET /api/v1/bottles` (roles ADMIN/MANAGER/CASHIER), `GET /api/v1/customers/me/bottles` (role CUSTOMER only; JWT sub -> customers.user_id, exclude staff) |
 | Shift | `POST /api/v1/shifts` (Phase 6 implemented: open shift, one OPEN per cashier, stale OPEN → `MANAGER_REVIEW` + audit; documented in `openapi.yaml`); `POST /api/v1/shifts/{id}/submit` dan `POST /api/v1/shifts/{id}/review` (Phase 8 implemented: submit uang kas oleh pemilik shift, review/rekonsiliasi oleh manager/admin; documented in `openapi.yaml`); tidak ada endpoint `GET` daftar shift |
 | Forecast | `POST /api/v1/forecasts` (ADMIN/MANAGER; tidak ada GET) |
-| Chat | `POST /api/v1/chat` (anonim, rate-limited; rencana Phase 10, belum diimplementasikan) |
-| FastAPI (internal) | `POST /ml/forecast/inventory`, `GET /health`; `POST /ml/chat/classify` rencana Phase 10, belum diimplementasikan |
+| Chat | `POST /api/v1/chat` (anonim, rate-limited; terimplementasi di Phase 10.3 (branch lokal, belum di-push, menunggu penerimaan PM); detail di 7.7) |
+| FastAPI (internal) | `POST /ml/forecast/inventory`, `GET /health`; `POST /ml/chat/classify` (Phase 10.2, internal, `X-Internal-Token`) |
 
 ---
 
@@ -359,7 +359,7 @@ Semua role yang menerima CASH memakai shift miliknya sendiri, dan reviewer tidak
 
 ### 7.7 Hybrid chat
 
-Rencana Phase 10, belum diimplementasikan. Diagram dan kontrak berikut menjelaskan rancangan classifier serta jalur chat.
+Status: classifier (10.2) dan Spring chat API dengan routing ADR-011 (10.3) terimplementasi di branch lokal, belum di-push, menunggu penerimaan PM. Jalur BYOK/LLM pada diagram (node K, LLM, O, SAFE) adalah rencana Phase 10.4 dan belum diimplementasikan; di 10.3 jalur tersebut berakhir di ADVANCED_AI_REQUIRED.
 
 ```mermaid
 flowchart TD
@@ -385,9 +385,11 @@ flowchart TD
     SAFE --> RESP
 ```
 
-Rencana Phase 10, belum diimplementasikan: setiap request akan menulis `chat_route_logs` (rute, intent, confidence, latensi, token, estimasi biaya) tanpa isi pesan dan tanpa key.
+Terimplementasi di 10.3: setiap respons 200 menulis satu baris `chat_route_logs` (rute, intent, confidence, latensi, `ml_available`) tanpa isi pesan dan tanpa key. Kolom token dan estimasi biaya baru relevan saat LLM (10.4/10.5).
 
-**Rencana Phase 10, belum diimplementasikan: pemetaan intent → sumber jawaban lokal**
+**Mode gagal (terimplementasi di 10.3)**: classifier timeout atau tidak tersedia -> fallback Spring deterministik, lalu `ADVANCED_AI_REQUIRED` bila tidak cocok (`ml_available=false`); Redis rate limit tidak tersedia -> 503 "Chat service temporarily unavailable"; insert `chat_route_logs` gagal -> 503 tersanitasi tanpa `answer` dan tanpa baris tersimpan (fail-closed); `ChatServiceUnavailable` sengaja dilempar tanpa cause karena `ApiExceptionHandler` menelusuri cause chain. Kegagalan chat tidak pernah menyentuh order atau payment.
+
+**Pemetaan intent → sumber jawaban lokal (terimplementasi di 10.3 untuk sembilan intent lokal; ADVANCED_CONVERSATION di 10.3 menghasilkan ADVANCED_AI_REQUIRED, eskalasi LLM di 10.4)**
 
 | Intent | Sumber | Catatan |
 |---|---|---|
@@ -403,9 +405,9 @@ Rencana Phase 10, belum diimplementasikan: setiap request akan menulis `chat_rou
 | ADVANCED_CONVERSATION | Eskalasi LLM | |
 | OUT_OF_SCOPE | Penolakan template | |
 
-**Rencana Phase 10, belum diimplementasikan: fallback Spring deterministik (maksimal lima kategori, ADR-012)**: jam buka, alamat venue, minimum spend, area venue, kebijakan bottle keeping; regex/keyword.
+**Fallback Spring deterministik (maksimal lima kategori, ADR-012; terimplementasi di 10.3)**: jam buka, alamat venue, minimum spend, area venue, kebijakan bottle keeping; regex/keyword.
 
-**Kontrak ML rancangan Phase 10, belum diimplementasikan** (intent classifier FR-ML-01/02):
+**Kontrak ML Phase 10.2 (terimplementasi di ml-service; contoh berikut hanya menunjukkan bentuk, kontrak otoritatif mengikuti implementasi)** (intent classifier FR-ML-01/02):
 
 ```json
 // POST /ml/chat/classify

@@ -30,6 +30,7 @@ Satu-satunya tempat ADR. `APPLICATION_ARCHITECTURE.md` hanya menunjuk ke sini.
 | 022 | Xendit Payment Requests v3, M3-A/V9 scope, and M4 contract notes | **Approved with binding notes** |
 | 023 | Runbook operasional: diagnostik read-only untuk payment QRIS Xendit yang belum tuntas (M5-C) | Accepted |
 | 024 | Model K untuk Chat Intent Classifier dan Validasi B2 | Accepted untuk konfigurasi Model K, dataset kanonik, protokol validasi B2, pengecualian near-duplicate, dan endpoint classifier internal (Round B2 CLOSED, Round C dan Round D diterima PM; Round D: komit 3e1f2a5 dan f27f056, CI run #5 hijau). Nilai theta kanonik untuk Spring: MENUNGGU KEPUTUSAN PM. |
+| 025 | Phase 10.3 Spring Chat API: implementasi routing, kontrak error, dan route log fail-closed | **Proposed** — diusulkan, menunggu persetujuan PM |
 
 ---
 
@@ -882,3 +883,47 @@ Phase 10 membutuhkan classifier intent untuk 11 kelas: `OPENING_HOURS`, `VENUE_A
 - Telemetry (Bukti D): Fase 10.5.
 - Independent heldout evaluation: Fase 10.6.
 - Spring chat API, BYOK, `chat_route_logs`: Fase 10.3–10.5, belum dimulai.
+
+### Catatan pembaruan (Phase 10.3)
+
+Baris-baris ADR-024 yang menyatakan Spring chat API/routing belum diimplementasikan menggambarkan keadaan saat ADR-024 ditulis. Status implementasi kini dilacak di ADR-025 (Proposed). Catatan ini tidak mengubah keputusan ADR-024.
+
+---
+
+## ADR-025 — Phase 10.3 Spring Chat API: implementasi routing, kontrak error, dan route log fail-closed
+
+### Status
+
+Proposed — diusulkan, menunggu persetujuan PM (docs/README.md aturan 1). Terkait ADR-011, ADR-012, dan ADR-024. ADR ini tidak mengubah atau menggantikan ADR mana pun.
+
+### Context
+
+Phase 10.3 Round B, C, dan D sudah di-commit lokal (`aeb12f7`, `24687ab`, `75cace5`). Kode Round E (perbaikan fail-closed pada route log dan test kegagalannya) di-commit lokal sebagai komit terpisah. Semuanya belum di-push dan belum diterima PM.
+
+### Terimplementasi (komit `75cace5` kecuali disebut lain), menunggu konfirmasi PM
+
+- Spring adalah satu-satunya otoritas routing; field `requiresLlm` dari classifier diabaikan.
+- θ dibaca dari konfigurasi sebagai BigDecimal dan tidak dibulatkan. Nilai default konfigurasi saat ini `0.2663504950761663` (nilai Python 3.12.9/CI) adalah default sementara, bukan keputusan kanonik.
+- Nilai route yang dipakai mengikuti CHECK V13: `LOCAL`, `FALLBACK`, `REFUSED`, `ADVANCED_AI_REQUIRED`. LLM tidak dipakai di 10.3.
+- `OUT_OF_SCOPE` tidak pernah memanggil LLM (BR-24). `OUT_OF_SCOPE` di bawah θ menjadi `ADVANCED_AI_REQUIRED`. Classifier tidak tersedia tanpa kecocokan fallback menjadi `ADVANCED_AI_REQUIRED` dengan intent, confidence, dan modelVersion null serta `ml_available=false`.
+- Kontrak request: body `{"venueId": long, "message": string}`. Respons 422 untuk venueId null atau <= 0 dan message null, kosong, atau lebih dari 500 code point. Respons 400 untuk JSON rusak atau tipe salah. Venue tidak dikenal dan venue nonaktif menghasilkan 404 yang identik.
+- Rate limit dijalankan sebelum body diparse, di namespace Redis sendiri. Redis tidak tersedia menghasilkan 503 "Chat service temporarily unavailable".
+- Kegagalan insert route log bersifat fail-closed: respons 503 tersanitasi, tanpa `answer`, tanpa baris tersimpan. Dibuktikan oleh `ChatRouteLogFailureIntegrationTests` (kegagalan database nyata lewat constraint sementara) dan pulih ke 200 setelah gangguan dihapus.
+- `ChatServiceUnavailable` sengaja dilempar tanpa cause, karena `ApiExceptionHandler` (HIGHEST_PRECEDENCE) menelusuri cause chain dan akan menimpa penanganan 503 khusus chat. Hal ini terbukti pada kasus Redis tidak tersedia.
+- Teks pesan, `X-AI-Key`, `ML_INTERNAL_TOKEN`, `Authorization`, dan prompt tidak disimpan atau dicatat, baik di log maupun di `chat_route_logs`. Ada test privasi di `ChatApiIntegrationTests` dan `ChatRouteLogFailureIntegrationTests`.
+
+### PENDING PM (belum diputuskan)
+
+1. Theta kanonik dari dua nilai ADR-024: `0.2663504950761665` (Python 3.10.6) dan `0.2663504950761663` (Python 3.12.9).
+2. Toleransi latensi: terukur `classifier_ms=2023` dan `total_elapsed_ms=2078` terhadap budget 2000 ms. Test hanya membatasi classifier_ms di [1500, 2500] dan total < 3500, jadi belum membuktikan <= 2000.
+3. Kelayakan LLM untuk unknown-intent (classifier tidak tersedia dan tanpa kecocokan fallback) pada 10.4.
+4. Jawaban saat ini hanya berbahasa Indonesia, dan jawaban menu mengabaikan produk tanpa kategori (INNER JOIN).
+5. Pendekatan test rate limit: test memutasi `ChatProperties`, `application-test.yml` tidak diubah.
+6. Baris `.env.example`: `ML_CLASSIFY_TIMEOUT_MS`, `CHAT_CONFIDENCE_THRESHOLD`, `CHAT_RATE_LIMIT_PER_MIN`.
+7. Gap dokumentasi: respons 401 untuk POST /chat (Bearer tidak valid) belum ditulis di openapi.
+
+### Consequences
+
+- Belum ada BYOK atau LLM; jalur tersebut dikerjakan di 10.4.
+- Kegagalan chat tidak menyentuh order atau payment (ADR-011).
+- Regresi penuh (owner-run, `./mvnw -B clean test`): Tests run: 901, Failures: 0, Errors: 0, Skipped: 1; BUILD SUCCESS; 13:32 menit. Test yang di-skip tidak diidentifikasi di sini.

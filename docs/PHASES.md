@@ -248,13 +248,21 @@ Evidence C held-out MAE berasal dari evaluasi offline pada tiga window sintetis 
 | 10.2 Round B2 | Model K, evaluator, dan laporan validasi B2 resmi | CLOSED (PM) | `6f37e80`, `1a555f9` |
 | 10.2 Round C | Endpoint internal `POST /ml/chat/classify` di ml-service | ACCEPTED (PM) | `ce0598c` |
 | 10.2 Round D | Packaging Docker dan gerbang CI; CI run #5 hijau | ACCEPTED (PM) | `3e1f2a5`, `f27f056` |
-| 10.3 | Spring chat API, integrasi classifier, implementasi routing policy ADR-011, kontrak OpenAPI, threshold milik Spring | NOT STARTED | - |
+| 10.3 | Spring chat API, integrasi classifier, implementasi routing policy ADR-011, kontrak OpenAPI, threshold milik Spring | IMPLEMENTED LOKAL — menunggu PM | `aeb12f7` (B), `24687ab` (C), `75cace5` (D), komit Round E terpisah; belum di-push |
 | 10.4 | BYOK Gemini/Groq | NOT STARTED | - |
 | 10.5 | Telemetry | NOT STARTED | - |
 | 10.6 | Integrasi, security, acceptance, dan independent heldout | NOT STARTED | - |
 | 10.7 | Regresi akhir dan review README akhir | NOT STARTED | - |
 
-> [!IMPORTANT] Sub-fase 10.1 hanya fondasi database/skema chat; itu bukan Spring chat API, routing, atau integrasi (10.3). Endpoint classifier sudah ada di ml-service (10.2 Round C), tetapi Spring belum memanggilnya.
+> [!IMPORTANT] Sub-fase 10.1 hanya fondasi database/skema chat; itu bukan Spring chat API, routing, atau integrasi (10.3). Endpoint classifier ada di ml-service (10.2 Round C). Pada branch `feature/phase10-3-chat-api` (lokal, belum di-push, belum diterima PM) Spring sudah memanggil classifier lewat `POST /api/v1/chat`.
+
+**Status 10.3 (Round E)**
+- Terimplementasi lokal: `POST /api/v1/chat` anonim; klasifikasi via ml-service; routing ADR-011 di Spring; sembilan intent lokal dijawab dari PostgreSQL; fallback maksimal lima kategori; rate limit Redis 10/menit/IP; route log tanpa teks pesan.
+- Kode Round E (perbaikan `ChatService` fail-closed dan `ChatRouteLogFailureIntegrationTests`) di-commit lokal sebagai komit terpisah; belum di-push; menunggu penerimaan PM.
+- Belum ada: LLM/BYOK (10.4), telemetry (10.5), heldout independen dan security acceptance (10.6), regresi akhir (10.7).
+- Regresi penuh (owner-run, `./mvnw -B clean test`): Tests run: 901, Failures: 0, Errors: 0, Skipped: 1; BUILD SUCCESS; 13:32 menit. Test yang di-skip tidak diidentifikasi di sini.
+- Menunggu keputusan PM: theta kanonik; toleransi latensi (terukur classifier_ms=2023, total=2078 vs budget 2000 ms); kebijakan unknown-intent untuk 10.4; bahasa jawaban dan batas INNER JOIN menu; baris `.env.example`.
+- Gap dokumentasi diketahui: openapi `POST /chat` belum mendokumentasikan respons 401 untuk Bearer tidak valid; ditunda.
 
 **val_accept_b2.jsonl adalah validation set** (dipakai untuk seleksi model dan theta), **bukan blind test**. Set held-out independen (Fase 10.6) belum ada di repositori ini.
 

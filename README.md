@@ -10,7 +10,7 @@ Backend for **NightVenue**, a fictional nightlife venue operations platform (POS
 | Phase 2 database, business date, demo seed | Implemented |
 | Business features (orders, payments, inventory, ...) | Order open/add items, whole-order VOID, per-item SERVE implemented; payments implemented — M3-A payment core + GET Payment, M3-B Xendit Create, M4-A authenticated webhook + Status API verification + settlement, M4-B opt-in reconciliation (all implemented and tested locally); BR-05 minimum-spend guard is implemented for CASH, CARD_EDC, and QRIS and locally tested. Xendit provider validation remains pending. |
 | Performance and ML metrics | Validation-set results for the chat classifier are documented under `ml-service/reports/`; they are not a blind test. No production or independent heldout metrics exist yet, and no headline numbers are published here. |
-| Phase 10 — Hybrid chat classifier (ML service) | In progress: Model K classifier and its internal FastAPI endpoint are implemented in `ml-service`; the Spring chat API, the Spring implementation of the ADR-011 routing policy, optional BYOK LLM, telemetry and independent heldout acceptance are not done yet. See [`ml-service/README.md`](ml-service/README.md). |
+| Phase 10 — Hybrid chat classifier (ML service) | In progress: the Model K classifier and its internal FastAPI endpoint (`ml-service`) and the Spring chat API (`POST /api/v1/chat`) with the ADR-011 routing policy are implemented on feature branches and are awaiting PM acceptance. Optional BYOK LLM, telemetry and independent heldout acceptance are not done yet. See [`ml-service/README.md`](ml-service/README.md). |
 | Hosting | Not decided (ADR-019 is *Proposed*) |
 
 ## Stack
@@ -122,7 +122,7 @@ Design documents live in [`docs/`](docs/README.md) and are the single source of 
 - BR-05 minimum spend is enforced for CASH, CARD_EDC, and QRIS through `PaymentService.checkMinimumSpend` and is covered by local integration tests. This does not indicate Xendit provider validation; sandbox validation remains pending. The guard rejects an exhausting payment below the order's minimum-spend snapshot before the provider call.
 - Chat classifier metrics come from a validation set that was also used for model comparison and threshold selection; they are not a blind test.
 - An independent heldout evaluation is a mandatory Phase 10.6 acceptance gate and does not exist yet.
-- Chat is not reachable through the Spring API yet; the classifier endpoint is internal to `ml-service`.
+- The Spring chat API (`POST /api/v1/chat`) exists on a feature branch and is awaiting PM acceptance; it answers from PostgreSQL only. No LLM/BYOK path exists yet, and the classifier endpoint is internal to `ml-service`.
 - Model binaries are built inside the Docker image and are not committed to Git.
 - One documented near-duplicate exception exists between training and validation data (see ADR-024).
 
