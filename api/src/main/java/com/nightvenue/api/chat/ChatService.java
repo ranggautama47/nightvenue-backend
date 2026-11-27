@@ -87,8 +87,10 @@ public class ChatService {
                     null,
                     clock.instant()
             ));
-        } catch (DataAccessException ex) {
-            throw new ChatServiceUnavailable(ex);
+        } catch (DataAccessException ignored) {
+            // No cause on purpose: ApiExceptionHandler resolves handlers through the cause chain
+            // and would override the chat-specific 503 (and could expose a 500).
+            throw new ChatServiceUnavailable();
         }
 
         return new ChatResponse(answer, route.name(), intent, confidence, modelVersion);
