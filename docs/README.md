@@ -5,7 +5,6 @@ Folder ini adalah **satu-satunya sumber kebenaran** untuk desain backend NightVe
 ## Urutan baca
 
 | # | Berkas | Isi |
-
 |---|---|---|
 | 1 | `../CONTEXT.md` | Ringkasan untuk agent (aturan kritis, batas arsitektur) |
 | 2 | `PRD.md` | Tujuan, scope, role, aturan bisnis (BR), kebutuhan fungsional (FR) |
